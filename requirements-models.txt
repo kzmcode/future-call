@@ -1,0 +1,23 @@
+# 重量依存(音声認識・声クローン)。Python 3.10 推奨。
+# 先に requirements.txt をインストールしてください。
+#
+# 注意:
+#  - torch / torchaudio は CPU 版で構いません(GPU 不要)。
+#    Windows/Linux の CPU 版: pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+#    macOS は通常の PyPI 版が Apple Silicon (MPS) 対応です。
+#  - MeloTTS / OpenVoice は PyPI 版がないため GitHub から入れます。
+#  - MeloTTS(日本語)は unidic の辞書ダウンロードが必要です: python -m unidic download
+#  - librosa はここに書きません。MeloTTS が librosa==0.9.1 を固定しており、別の範囲を
+#    書くと ResolutionImpossible になります(MeloTTS 経由で 0.9.1 が入ります)。
+#  - setuptools<81 は librosa 0.9.1 が pkg_resources を使うために必要です。
+#  - OpenVoice は自前の requirements が古いバージョンを固定して MeloTTS と衝突するため、
+#    このファイルには含めず、別途 --no-deps で入れます(scripts/setup.sh が実行):
+#        pip install --no-deps git+https://github.com/myshell-ai/OpenVoice.git
+#  - OpenVoice V2 のチェックポイントは scripts/download_models.py で取得します。
+faster-whisper>=1.0
+torch>=2.1,<2.6
+torchaudio>=2.1,<2.6
+noisereduce>=3.0
+setuptools<81
+git+https://github.com/myshell-ai/MeloTTS.git
+huggingface_hub>=0.20

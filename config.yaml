@@ -1,0 +1,102 @@
+# 未来の自分からの電話 - 設定ファイル(F-62)
+# 変更後はサーバーを再起動してください。
+
+server:
+  host: 127.0.0.1
+  port: 8000
+  open_browser: false           # true にすると起動時に既定ブラウザを開く(通常は start スクリプトが Chrome を開く)
+
+experience:
+  future_years: 10              # 何年後の自分か (C-08)
+  caller_name: null             # null なら "{future_years}年後の自分" を表示
+  record_min_sec: 20            # 録音の下限秒数 (F-04)
+  record_max_sec: 90            # 録音の上限秒数。到達で自動送信 (F-05)
+  ring_timeout_sec: 30          # 着信に応答がない場合に不在着信にするまでの秒数 (F-45)
+  missed_call_display_sec: 4    # 不在着信の表示秒数
+  end_screen_sec: 15            # 終話画面から待機画面に戻るまでの秒数 (F-51)
+  consent_idle_sec: 60          # 同意画面で操作がない場合に待機画面へ戻る秒数
+  low_volume_threshold: 0.02    # 音量不足の判定しきい値(RMS 0〜1) (F-08)
+  staff_reset_hold_ms: 3000     # スタッフ用リセットの長押し時間(ミリ秒) (F-60)
+  status_poll_ms: 1000          # 状態ポーリング間隔(ミリ秒)
+  reply_wait:                   # 疑似的なやりとり: 問いかけの後に体験者の返事を待つ(音量だけ見る。録音・送信はしない)
+    enabled: true               # false なら待たずに続けて再生
+    no_speech_sec: 5            # 誰も話さないとき、この秒数で続きを再生
+    silence_end_sec: 1.2        # 話し終わりと判定する無音の秒数
+    max_reply_sec: 15           # 話し続けてもこの秒数で打ち切って続きを再生
+    min_pause_sec: 0.6          # スピーカー音の回り込み防止。再生停止からこの秒数後に判定開始
+    speech_threshold: 0.03      # 話していると判定する音量(RMS 0〜1)
+
+audio:                          # 音量設定 (N-21)
+  ringtone_volume: 0.8          # 着信音の音量 0〜1
+  call_volume: 1.0              # 通話音声の音量 0〜1
+  ambient_enabled: true         # 通話中に生活音(カフェのざわめき等)をかすかに流す
+  ambient_volume: 0.12          # 環境音の音量 0〜1
+  ambient_file: null            # 例: "assets/ambient_cafe.mp3"(frontend/ からの相対パス)。null ならブラウザで自動生成
+
+pipeline:
+  total_timeout_sec: 180        # 生成の上限秒数。超えるとブラウザ音声合成に切替 (N-01)
+  ring_after_chunks: 2          # 何チャンク完成したら着信を開始するか (F-33)
+  work_dir: null                # 一時ファイルの置き場。null ならOSの一時ディレクトリ
+
+reference:                      # 参照音声の前処理 (audio_prep)
+  max_sec: 30                   # 参照音声の最大秒数
+  min_voiced_sec: 8             # 声クローンに必要な有声区間の最小秒数
+  denoise: false                # ノイズ除去。true にすると声色が似にくくなる(実測 類似度 -0.04)。騒がしい会場でノイズが目立つ時だけ true
+
+stt:
+  engine: faster_whisper        # faster_whisper | mock
+  model_size: small             # tiny | base | small | medium
+  compute_type: int8
+  beam_size: 1
+  language: ja
+
+llm:
+  engine: gemini                # gemini | template(template はネット不要で常にテンプレート)
+  model: gemini-3.5-flash-lite
+  fallback_models: [gemini-3.1-flash-lite, gemini-3.8-flash]   # 主モデルが 404(提供終了)または 429(モデルごとの無料枠の上限)のとき順に試す
+  quota_cooldown_sec: 120       # 429 になったモデルをこの秒数スキップして再試行(1日あたりの上限なら 30 分)
+  timeout_sec: 20               # Gemini のタイムアウト (F-23)
+  temperature: 0.9
+  min_transcript_chars: 10      # これ未満の認識結果はテンプレートに切替 (F-12)
+  target_chars_min: 300
+  target_chars_max: 480         # 相づち・間投詞を含めた上限
+  reply_pauses: 1               # 問いかけの数 0〜2(0 なら 1 パートのみ)
+
+tts:
+  engine: gemini_openvoice      # gemini_openvoice | openvoice | melo(声クローン無しの標準音声のみ) | mock
+  chunk_unit: auto              # auto | part | sentence(auto = gemini_openvoice なら part、それ以外は sentence)
+  gemini:                       # Gemini TTS(gemini_openvoice のとき。読み上げ文と話し方の指示のみ送信し、体験者の声は送らない)
+    model: gemini-3.8-flash-tts # 主モデル(表現が豊か)
+    fallback_models: [gemini-3.8-flash-lite-tts]   # 主モデルが 429(モデルごとの無料枠の上限)/404 のとき順に試す(少し表現が控えめ)。全モデルが使えないときだけ MeloTTS
+    timeout_sec: 25             # 1 パートの合計の待ち時間。超えたら MeloTTS にフォールバック
+    quota_cooldown_sec: 300     # 429 になったモデルをこの秒数スキップして再試行(1日あたりの上限なら 30 分)
+    voices:                     # 体験者の声の高さ(F0)に最も近い f0_hz の音声を選ぶ(実測した音声の基本周波数)
+      - {name: Charon, f0_hz: 100}
+      - {name: Puck, f0_hz: 120}
+      - {name: Kore, f0_hz: 160}
+    # voices を消すと従来の2分割(voice_low/voice_high/voice_split_f0_hz)に戻る
+    voice_low: Charon
+    voice_high: Kore
+    voice_split_f0_hz: 165
+    default_style: "懐かしそうに、少し照れながら、やさしく語りかけるように"
+  device: cpu                   # cpu | mps | auto
+  checkpoint_dir: models/OpenVoiceV2
+  speed: 1.0
+  tau: 0.5                      # OpenVoice 変換の tau(0.1〜1.0 で類似度はほぼ同じ。実測 0.5 前後)
+  standard_voice_pitch_match: true   # F-35: 標準音声を体験者の声の高さに寄せる
+  age_voice_shift:              # Q-06: 未来の声を少し低くする加工
+    enabled: false
+    semitones: -1.0
+    skip_if_child: true
+
+phone_fx:                       # 電話音質エフェクト (F-34)
+  enabled: true
+  low_hz: 250                   # 電話帯域の下限(300 だと声色の類似度が下がる)
+  high_hz: 3800
+  noise_db: -45
+  compress: true
+  sample_rate: 16000
+
+logging:
+  dir: logs                     # リポジトリ直下からの相対パス
+  level: INFO

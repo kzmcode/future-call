@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>未来の自分からの電話</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="bg" aria-hidden="true"><div class="stars s1"></div><div class="stars s2"></div><div class="stars s3"></div><div class="glow"></div></div>
+
+<main id="app">
+
+<!-- 待機 -->
+<section id="screen-idle" class="screen">
+  <div class="center">
+    <p class="eyebrow">FUTURE CALL</p>
+    <h1 class="title">未来の自分からの電話</h1>
+    <p class="lead">しっぱいの おはなしを すると、<br>みらいの じぶんから でんわが かかってくるよ。</p>
+    <button id="btn-start" class="btn btn-primary btn-xl" disabled>準備中…</button>
+  </div>
+</section>
+
+<!-- 同意 -->
+<section id="screen-consent" class="screen">
+  <div class="center wide">
+    <h2 class="h2">はじめる まえに</h2>
+    <ul class="consent-list">
+      <li><span class="ic">🎙</span><span>あなたの<b>こえを ろくおん</b>して、みらいの じぶんの こえを つくるために つかいます。</span></li>
+      <li><span class="ic">🗑</span><span>ろくおんも おはなしも、<b>たいけんが おわると ぜんぶ けします</b>。</span></li>
+      <li><span class="ic">✉</span><span>はなした ないようを <b>もじにした テキスト</b>を、がいぶの AIサービス(<b>Google Gemini</b>)に おくります。おとは おくりません。</span></li>
+      <li><span class="ic">🔊</span><span>みらいの じぶんの <b>よみあげの こえ</b>も、<b>Google Gemini</b>で つくります。おくるのは <b>おはなしの もじだけ</b>で、あなたの こえは おくりません。</span></li>
+      <li><span class="ic">✨</span><span>おはなしは <b>AIが つくった フィクション</b>です。みらいを よげんするものでは ありません。</span></li>
+      <li><span class="ic">👪</span><span><b>18さいみまんの ひと</b>は、ほごしゃの かたと いっしょに たいけんしてね。</span></li>
+    </ul>
+    <div class="row">
+      <button id="btn-consent-no" class="btn btn-ghost btn-lg">やめる</button>
+      <button id="btn-consent-yes" class="btn btn-primary btn-lg">同意してはじめる</button>
+    </div>
+  </div>
+</section>
+
+<!-- 録音 -->
+<section id="screen-record" class="screen" data-state="ready">
+  <div class="center wide">
+    <h2 class="h2 only-ready">どんな しっぱいを したか おしえてね</h2>
+    <h2 class="h2 only-rec">はなして いるよ…</h2>
+    <ul class="hints">
+      <li><b>いつ</b><small>いつごろの こと?</small></li>
+      <li><b>なにに ちょうせん</b><small>なにを がんばった?</small></li>
+      <li><b>どうなった</b><small>けっかは どうだった?</small></li>
+    </ul>
+
+    <button id="btn-rec-start" class="btn btn-primary btn-xl only-ready"><span class="dot"></span>体験を話す</button>
+
+    <div class="rec-panel only-rec">
+      <div class="timer"><span id="rec-elapsed">0:00</span><span class="timer-max"> / <span id="rec-max">1:30</span></span></div>
+      <div class="bar-wrap"><div class="bar-fill" id="rec-progress"></div><div class="bar-min" id="rec-minmark"></div></div>
+      <div class="meter" id="rec-meter" aria-hidden="true"></div>
+      <p id="rec-msg" class="msg" aria-live="polite"></p>
+      <div class="row">
+        <button id="btn-rec-redo" class="btn btn-ghost btn-lg">やり直す</button>
+        <button id="btn-rec-send" class="btn btn-send" aria-label="送信">
+          <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true"><path d="M3.4 20.4 21 12 3.4 3.6 3.3 10l12 2-12 2z" fill="currentColor"/></svg>
+          <span>送信</span>
+        </button>
+      </div>
+    </div>
+    <p id="rec-error" class="msg warn"></p>
+  </div>
+</section>
+
+<!-- 接続中 -->
+<section id="screen-connecting" class="screen">
+  <div class="tunnel" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div class="center">
+    <h2 class="h1">未来と接続しています…</h2>
+    <p class="lead dim">ちょっと まっててね</p>
+    <div class="progress"><div id="conn-progress"></div></div>
+  </div>
+</section>
+
+<!-- 着信 / 不在着信 -->
+<section id="screen-ringing" class="screen">
+  <div class="phone" id="ring-phone">
+    <div class="phone-top"><span class="notch"></span></div>
+    <div class="phone-body">
+      <p class="phone-state" id="ring-state">ちゃくしん</p>
+      <h2 class="caller" id="ring-caller">10年後の自分</h2>
+      <div class="avatar pulse"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="38" r="17" fill="currentColor"/><path d="M16 92c2-24 16-36 34-36s32 12 34 36z" fill="currentColor"/></svg></div>
+      <p class="phone-sub" id="ring-sub">でんわに でてね</p>
+      <div class="answer-wrap">
+        <button id="btn-answer" class="btn-answer" aria-label="応答">
+          <svg viewBox="0 0 24 24" width="64" height="64" aria-hidden="true"><path fill="currentColor" d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1z"/></svg>
+        </button>
+        <span class="answer-label">でる</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 通話中 -->
+<section id="screen-call" class="screen">
+  <div class="phone call">
+    <div class="phone-top"><span class="notch"></span></div>
+    <div class="phone-body">
+      <p class="phone-state">つうわちゅう</p>
+      <h2 class="caller" id="call-caller">10年後の自分</h2>
+      <p class="call-timer" id="call-timer">0:00</p>
+      <canvas id="wave" width="600" height="220"></canvas>
+      <div id="call-listen" class="listen" aria-hidden="true"><i></i><i></i><i></i></div>
+      <button id="btn-hangup" class="btn-hangup" aria-label="終話">
+        <svg viewBox="0 0 24 24" width="60" height="60" aria-hidden="true" style="transform:rotate(135deg)"><path fill="currentColor" d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1z"/></svg>
+      </button>
+      <span class="answer-label">おわる</span>
+    </div>
+  </div>
+</section>
+
+<!-- 終話 -->
+<section id="screen-end" class="screen">
+  <div class="center">
+    <p class="eyebrow">つうわ おわり</p>
+    <h2 class="h1 end-msg">その失敗は、<br>未来のあなたにつながっています</h2>
+    <p class="lead">つうわ時間 <b id="end-duration">0:00</b></p>
+    <p class="note">いまの おはなしは AIが つくった フィクションで、みらいを よげんするものでは ありません。</p>
+  </div>
+</section>
+
+</main>
+
+<div id="staff-hotspot" aria-hidden="true"></div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
