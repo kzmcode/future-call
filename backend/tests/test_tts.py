@@ -51,17 +51,17 @@ def test_load_without_deps(monkeypatch):
 
 def test_prepare_standard_cases(tmp_path):
     s = SpeechSynthesizer({})
-    assert s.prepare_voice(None, str(tmp_path), 200).mode == "standard"
+    assert s.prepare_voice(None, str(tmp_path), 200, False).mode == "standard"
     ref = tmp_path / "r.wav"
     ref.write_bytes(b"x")
-    assert s.prepare_voice(str(ref), str(tmp_path), None).mode == "standard"
+    assert s.prepare_voice(str(ref), str(tmp_path), None, False).mode == "standard"
 
 
 def test_prepare_clone_and_failure(tmp_path):
     ref = tmp_path / "r.wav"
     ref.write_bytes(b"x")
-    assert make(FakeMelo(), FakeConv()).prepare_voice(str(ref), str(tmp_path), 120).mode == "clone"
-    ctx = make(FakeMelo(), FakeConv(fail=True)).prepare_voice(str(ref), str(tmp_path), 110)
+    assert make(FakeMelo(), FakeConv()).prepare_voice(str(ref), str(tmp_path), 120, False).mode == "clone"
+    ctx = make(FakeMelo(), FakeConv(fail=True)).prepare_voice(str(ref), str(tmp_path), 110, False)
     assert ctx.mode == "standard" and ctx.pitch_semitones == -8.0
 
 
@@ -69,13 +69,14 @@ def test_melo_engine_always_standard(tmp_path):
     ref = tmp_path / "r.wav"
     ref.write_bytes(b"x")
     s = make(FakeMelo(), FakeConv(), engine="melo")
-    assert s.prepare_voice(str(ref), str(tmp_path), None).mode == "standard"
+    assert s.prepare_voice(str(ref), str(tmp_path), None, False).mode == "standard"
 
 
 def test_age_shift():
-    s = SpeechSynthesizer({"age_voice_shift": {"enabled": True, "semitones": -1.5}})
-    assert s.prepare_voice(None, "", None).age_semitones == -1.5
-    assert SpeechSynthesizer({}).prepare_voice(None, "", None).age_semitones == 0.0
+    s = SpeechSynthesizer({"age_voice_shift": {"enabled": True, "semitones": -1.5, "skip_if_child": True}})
+    assert s.prepare_voice(None, "", None, False).age_semitones == -1.5
+    assert s.prepare_voice(None, "", None, True).age_semitones == 0.0
+    assert SpeechSynthesizer({}).prepare_voice(None, "", None, False).age_semitones == 0.0
 
 
 def test_synthesize_clone_ok(tmp_path):
@@ -185,14 +186,14 @@ def gmake(client, melo=None, conv=None, key="k", **extra):
 def test_voice_selection_by_f0(tmp_path):
     s = gmake(None)
     d = str(tmp_path)
-    assert s.prepare_voice(None, d, 120).voice_name == "Charon"
-    assert s.prepare_voice(None, d, 220).voice_name == "Kore"
-    assert s.prepare_voice(None, d, None).voice_name == "Kore"
+    assert s.prepare_voice(None, d, 120, False).voice_name == "Charon"
+    assert s.prepare_voice(None, d, 220, False).voice_name == "Kore"
+    assert s.prepare_voice(None, d, None, False).voice_name == "Kore"
 
 
 def test_no_api_key_behaves_like_openvoice(tmp_path):
     s = gmake(None, key=None)
-    assert s.prepare_voice(None, str(tmp_path), 120).voice_name is None
+    assert s.prepare_voice(None, str(tmp_path), 120, False).voice_name is None
     out = str(tmp_path / "o.wav")
     s.synthesize(VoiceContext("standard"), "x", out)
     assert open(out, "rb").read() == b"base"
@@ -410,7 +411,7 @@ def test_voice_table_nearest_f0(tmp_path):
     s._gcfg["voices"] = [{"name": "Lo", "f0_hz": 100}, {"name": "Mid", "f0_hz": 120},
                          {"name": "Hi", "f0_hz": 160}, {"name": "Top", "f0_hz": 230}]
     d = str(tmp_path)
-    pick = lambda f0: s.prepare_voice(None, d, f0).voice_name
+    pick = lambda f0: s.prepare_voice(None, d, f0, False).voice_name
     assert pick(90) == "Lo" and pick(125) == "Mid" and pick(150) == "Hi"
     assert pick(250) == "Top" and pick(None) == "Top"   # unknown -> 200 Hz -> Top(230)
 
@@ -525,3 +526,93 @@ def test_get_client_disables_429_retry():
     ro = c._api_client._http_options.retry_options
     assert ro is not None and 429 not in ro.http_status_codes
     assert 503 not in ro.http_status_codes
+
+
+# ------------------------------------------------------------ chatterbox
+class FakeChatterbox:
+    sr = 24000
+
+    def __init__(self, fail=False):
+        self.fail = fail
+        self.calls = []
+
+    def generate(self, audio, target_voice_path=None):
+        import numpy as np
+        self.calls.append((os.path.basename(audio), target_voice_path))
+        if self.fail:
+            raise RuntimeError("bad")
+        return np.full((1, 2400), 0.1, dtype="float32")
+
+
+def cbmake(client, cb=None, melo=None, key="k", engine="gemini_chatterbox"):
+    s = SpeechSynthesizer({"engine": engine, "gemini": dict(GCFG)}, api_key=key)
+    s._melo, s._chatterbox, s._speaker_id = melo or FakeMelo(), cb, 0
+    s._gemini_client = client
+    return s
+
+
+def test_chatterbox_prepare_uses_reference_path(tmp_path):
+    ref = tmp_path / "r.wav"
+    ref.write_bytes(b"x")
+    ctx = cbmake(None, FakeChatterbox()).prepare_voice(str(ref), str(tmp_path), 120, False)
+    assert (ctx.mode, ctx.target_se, ctx.voice_name) == ("clone", str(ref), "Charon")
+    # 変換器が読み込めていなければ標準音声
+    assert cbmake(None, None).prepare_voice(str(ref), str(tmp_path), 120, False).mode == "standard"
+
+
+def test_chatterbox_gemini_clone(tmp_path):
+    cb = FakeChatterbox()
+    s = cbmake(FakeGenai(), cb)
+    out = str(tmp_path / "o.wav")
+    s.synthesize(VoiceContext("clone", target_se="/ref.wav", voice_name="Kore"), "x", out)
+    assert cb.calls == [("gemini.wav", "/ref.wav")]
+    import soundfile as sf
+    y, sr = sf.read(out)
+    assert sr == 24000 and len(y) == 2400
+    assert os.listdir(tmp_path) == ["o.wav"]
+
+
+def test_chatterbox_failure_keeps_gemini_voice(tmp_path):
+    s = cbmake(FakeGenai(), FakeChatterbox(fail=True))
+    out = str(tmp_path / "o.wav")
+    s.synthesize(VoiceContext("clone", target_se="/ref.wav", voice_name="Kore"), "x", out)
+    with _wave.open(out) as w:  # 変換前の Gemini 音声
+        assert w.getframerate() == 24000 and w.getnframes() == 2400
+
+
+def test_chatterbox_melo_fallback_also_converted(tmp_path):
+    cb = FakeChatterbox()
+    s = cbmake(FakeGenai(exc=RuntimeError("down")), cb)
+    out = str(tmp_path / "o.wav")
+    s.synthesize(VoiceContext("clone", target_se="/ref.wav", voice_name="Kore"), "x", out)
+    assert cb.calls == [("base.wav", "/ref.wav")]
+
+
+def test_chatterbox_engine_without_gemini_key(tmp_path):
+    s = cbmake(None, FakeChatterbox(), key=None)
+    assert s.prepare_voice(None, str(tmp_path), 120, False).voice_name is None
+    cb = cbmake(None, FakeChatterbox(), engine="chatterbox")
+    assert not cb._gemini_enabled() and cb._use_chatterbox()
+
+
+def test_log_records_model_used(tmp_path, caplog):
+    import logging
+    s = gmake(FakeGenai())
+    with caplog.at_level(logging.INFO, logger="app.tts"):
+        s.synthesize(VoiceContext("standard", voice_name="Kore"), "秘密の本文", str(tmp_path / "o.wav"))
+    msgs = [r.getMessage() for r in caplog.records if "Gemini TTS: model=" in r.getMessage()]
+    assert msgs == ["Gemini TTS: model=m voice=Kore"]
+    assert "秘密" not in caplog.text
+
+
+def test_style_suffix_appended_to_story_style(tmp_path):
+    c = FakeGenai()
+    s = gmake(c)
+    s._gcfg["style_suffix"] = "自然な日本語で"
+    s.synthesize(VoiceContext("standard", voice_name="Kore"), "x", str(tmp_path / "o.wav"), style="やさしく。")
+    assert c.calls[0]["input"][0]["content"][0]["annotations"][0]["style"] == "やさしく。自然な日本語で"
+    c2 = FakeGenai()
+    s2 = gmake(c2)
+    s2._gcfg["style_suffix"] = "自然な日本語で"
+    s2.synthesize(VoiceContext("standard", voice_name="Kore"), "x", str(tmp_path / "p.wav"))
+    assert c2.calls[0]["input"][0]["content"][0]["annotations"][0]["style"] == "default-style"

@@ -9,6 +9,23 @@ export function getAudioContext() {
   return ctx;
 }
 
+// 通話が自然に終わったときの切断音(短い下降2音)。
+export function playHangupTone(volume = 0.5) {
+  try {
+    const c = getAudioContext();
+    const t0 = c.currentTime + 0.05;
+    [[480, 0], [380, 0.22]].forEach(([f, dt]) => {
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = 'sine'; o.frequency.value = f;
+      g.gain.setValueAtTime(0, t0 + dt);
+      g.gain.linearRampToValueAtTime(0.15 * volume, t0 + dt + 0.02);
+      g.gain.linearRampToValueAtTime(0, t0 + dt + 0.18);
+      o.connect(g); g.connect(c.destination);
+      o.start(t0 + dt); o.stop(t0 + dt + 0.2);
+    });
+  } catch (e) { /* ignore */ }
+}
+
 export async function unlockAudio() {
   try {
     const c = getAudioContext();

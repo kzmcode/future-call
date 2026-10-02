@@ -63,8 +63,8 @@
 
 | キー | 既定 | 説明 |
 |---|---|---|
-| total_timeout_sec | 240 | 生成の上限。超えると、できた分だけで着信(1 つもできなければブラウザ内蔵の音声読み上げで代替) |
-| ring_after_chunks | all | `all`(既定): 全部の音声ができてから着信を始める。通話中の途切れがない(ローカル合成は遅いため)。数字: 何文できたら着信を始めるか。待ち時間を減らすなら 1、通話中の途切れが出るなら 3 |
+| total_timeout_sec | 180 | 生成の上限。超えるとブラウザ内蔵の音声読み上げで代替 |
+| ring_after_chunks | 2 | 何文できたら着信を始めるか。待ち時間を減らすなら 1、通話中の途切れが出るなら 3 |
 | work_dir | null | 一時ファイルの場所。null で OS の一時フォルダ(通常は変えない) |
 
 ## reference(参照音声の前処理)
@@ -91,11 +91,11 @@
 
 | キー | 既定 | 説明 |
 |---|---|---|
-| engine | ollama | `ollama`(既定・ローカル。外部通信なし)/ `gemini`(クラウド)/ `template`(常にテンプレート)。詳細は [08](08_local_mode.md) |
+| engine | gemini | `gemini` または `template`(常にテンプレート) |
 | model | gemini-3.5-flash-lite | Gemini のモデル名([02](02_gemini_api.md)) |
 | fallback_models | [gemini-3.1-flash-lite, gemini-3.8-flash] | 主モデルが 404 / NOT_FOUND(提供終了・新規ユーザー不可)または 429 / RESOURCE_EXHAUSTED(無料枠の上限。上限はモデルごと)のとき順に試すモデル。404 で動いたモデルはプロセス内で記憶します。503(一時的な過負荷)のときはその通話だけ次のモデルを使います。全モデルが上限ならテンプレートになります。全体で timeout_sec の範囲内 |
 | quota_cooldown_sec | 120 | 429 になったモデルをこの秒数スキップし(次の来場者は即座に次のモデルへ)、過ぎたら再び試します。「1日あたり」の上限のときは自動で 30 分以上にします |
-| timeout_sec | 20 | これを超えるとテンプレートに切替 |
+| timeout_sec | 35 | これを超えるとテンプレートに切替 |
 | temperature | 0.9 | 高いほど多様。落ち着いた内容にしたいなら 0.7 |
 | min_transcript_chars | 10 | 認識結果がこれ未満なら Gemini を使わずテンプレート |
 | target_chars_min / max | 300 / 480 | 物語の文字数(相づち・間投詞を含む上限。読み上げ約60〜90秒)。通話を短くするなら 250 / 350 |
@@ -107,23 +107,25 @@
 
 | キー | 既定 | 説明 |
 |---|---|---|
-| engine | chatterbox | `chatterbox`(既定・ローカル完結。声クローン。[08](08_local_mode.md))。`gemini_openvoice`: Gemini TTS で表現豊かに読み上げ → OpenVoice で体験者の声色に変換。`openvoice`: MeloTTS + OpenVoice(Gemini の読み上げを使わない)。`melo`: 標準音声のみで**速い**(声クローン無し)。`mock`: 開発用 |
-| chunk_unit | auto | 生成・再生の単位。`auto`(`gemini_openvoice` なら `part`、他は `sentence`)/ `part`(パートごと。Gemini への回数が少ない)/ `sentence`(文ごと) |
+| engine | gemini_chatterbox | `gemini_chatterbox`(既定): Gemini TTS で表現豊かに読み上げ → Chatterbox VC で体験者の声色だけに変換(話し方・抑揚・間は Gemini のまま)。`gemini_openvoice`: 変換器が OpenVoice。`chatterbox`: MeloTTS + Chatterbox(Gemini の読み上げを使わない)。`openvoice`: MeloTTS + OpenVoice(Gemini の読み上げを使わない)。`melo`: 標準音声のみで**速い**(声クローン無し)。`mock`: 開発用 |
+| chunk_unit | auto | 生成・再生の単位。`auto`(`gemini_*` なら `part`、他は `sentence`)/ `part`(パートごと。Gemini への回数が少ない)/ `sentence`(文ごと) |
 | device | cpu | `cpu` が最も安定。`mps`(Apple GPU)は速い場合があるが不安定なことがある。`auto` は自動選択 |
 | checkpoint_dir | models/OpenVoiceV2 | OpenVoice のモデル置き場(相対パスはリポジトリ直下基準) |
-| tau | 0.5 | OpenVoice 変換の tau。実測では 0.1〜1.0 で類似度はほぼ同じ(差 0.01 未満)。大きいほど変換のゆらぎが増える |
+| tau | 0.5 | (OpenVoice のみ。Chatterbox では無視)変換の tau。実測では 0.1〜1.0 で類似度はほぼ同じ(差 0.01 未満)。大きいほど変換のゆらぎが増える |
 | speed | 1.0 | 読み上げ速度。0.9 でゆっくり、1.1 で速く |
 | standard_voice_pitch_match | true | 声クローン失敗時の標準音声を、体験者の声の高さに寄せる |
 
-### tts.gemini(Gemini TTS。`gemini_openvoice` のとき有効)
+### tts.gemini(Gemini TTS。`gemini_chatterbox` / `gemini_openvoice` のとき有効)
 
 読み上げの文章と話し方の指示だけを送ります。体験者の声は送りません。詳細は [02_gemini_api.md](02_gemini_api.md)。
 
 | キー | 既定 | 説明 |
 |---|---|---|
+| default_style | (電話口の自然な話し方) | 台本側に話し方の指示が無いときの既定 |
+| style_suffix | (自然な日本語の指示) | 台本ごとの話し方の指示の後ろに必ず付け足す文。外国人っぽさを抑える。空にすると付けない |
 | model | gemini-3.8-flash-tts | 主モデル。高速版は `gemini-3.8-flash-lite-tts`(着信までが遅いときは、これを `model` にして先頭で使う) |
 | fallback_models | [gemini-3.8-flash-lite-tts] | 主モデルが 429(無料枠の上限。上限はモデルごと)または 404 のとき、順に試すモデル。少し表現が控えめになる場合あり。全モデルが使えないときだけ MeloTTS。空 `[]` で無効 |
-| timeout_sec | 25 | 1 パートの合計の待ち時間(モデルの数で増えない)。超えるとそのパートは MeloTTS で作る |
+| timeout_sec | 40 | 1 パートの合計の待ち時間(モデルの数で増えない)。超えるとそのパートは MeloTTS で作る |
 | quota_cooldown_sec | 300 | 429 になったモデルをこの秒数スキップして再試行する(1 日あたりの上限なら 30 分) |
 | voices | Charon 100 / Puck 120 / Kore 160 | `[{name, f0_hz}]` の表。体験者の声の高さ(F0)に最も近い `f0_hz` の音声を選ぶ(声の高さ不明なら 200 Hz 扱い)。`f0_hz` は各音声を実際に合成して測った値。増やすときは、その音声で合成して声の高さを測って追記する |
 | voice_low / voice_high / voice_split_f0_hz | Charon / Kore / 165 | `voices` を書かないときの従来の 2 分割(F0 が `voice_split_f0_hz` 未満なら low) |

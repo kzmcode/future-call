@@ -13,10 +13,12 @@
 #  - OpenVoice は自前の requirements が古いバージョンを固定して MeloTTS と衝突するため、
 #    このファイルには含めず、別途 --no-deps で入れます(scripts/setup.sh が実行):
 #        pip install --no-deps git+https://github.com/myshell-ai/OpenVoice.git
+#  - Chatterbox(声色変換 tts.engine: gemini_chatterbox)も同様に別途 --no-deps で入れます。
+#    依存は requirements-chatterbox.txt、本体は scripts/setup.sh が実行します。torch 2.6 が必要なため上限を <2.7 にしています。
 #  - OpenVoice V2 のチェックポイントは scripts/download_models.py で取得します。
 faster-whisper>=1.0
-torch>=2.1,<2.6
-torchaudio>=2.1,<2.6
+torch>=2.1,<2.7
+torchaudio>=2.1,<2.7
 noisereduce>=3.0
 setuptools<81
 git+https://github.com/myshell-ai/MeloTTS.git

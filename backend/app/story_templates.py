@@ -33,6 +33,7 @@ class Template(NamedTuple):
 
 _OPEN = "もしもし、びっくりしたよね。{N}年後の{me}だよ。"
 _S_WARM = "懐かしそうに、少し照れながら、やさしく語りかけるように"
+_S_CHILD = "明るく、やさしく、ゆっくりと語りかけるように"
 _S_SERIOUS = "静かに、落ち着いて、そっと寄り添うようにやさしく"
 
 GENERIC: list[Template] = [
@@ -108,6 +109,33 @@ GENERIC: list[Template] = [
         "遠い未来から、ずっと応援しているよ。じゃあ、またね。"),
 ]
 
+CHILD: list[Template] = [
+    Template(_S_CHILD,
+        _OPEN + "さっき話してくれたこと、ちゃんと聞いたよ。うまくいかなくて、くやしかったよね。"
+        "{me}も、あのときは泣きたくなるくらい、かなしかったのを覚えているよ。",
+        "ねえ、あのときのこと、覚えてる？",
+        "うん、うん。そうだよね。",
+        "でもね、そのあとが楽しいんだ。あのときくやしかったから、もう一回がんばってみようって思えたの。"
+        "少しずつ、できることがふえていって、まわりの友だちや先生も、よろこんでくれたんだよ。"
+        "今の{me}は、毎日けっこう楽しくすごしているよ。えへへ。"
+        "できないこともあるけれど、「またやってみよう」って思えるんだ。"
+        "それはね、あのとき、あきらめなかった{you}のおかげだよ。"
+        "だから、心配しなくていいよ。{you}なら大丈夫。ゆっくり、{you}のペースでいこうね。"
+        "いつでもおうえんしているよ。じゃあ、またね。"),
+    Template(_S_CHILD,
+        _OPEN + "いま、{you}が話したこと、おうちの人や友だちには、なかなか言えなかったかもしれないね。"
+        "でも、ちゃんと話せて、えらいよ。{me}は、あのときのことをよく覚えているよ。",
+        "ねえ、だれかに話せたかな？",
+        "…そっか。うん、うん。",
+        "あのね、あのできごとがあったから、{me}はやさしくなれたんだ。"
+        "こまっている友だちに気がついて、「だいじょうぶ？」って声をかけられるようになったの。"
+        "そうしたら、たくさんの人が「ありがとう」って言ってくれて、とてもうれしかったよ。"
+        "{N}年たった今も、その気持ちはかわらないよ。"
+        "あのときのくやしい気持ちは、{me}のたからものになったんだ。"
+        "だから、{you}も、じぶんのことをすきでいてね。少しずつでいいからね。"
+        "みらいから、ずっと見ているよ。じゃあ、またね。"),
+]
+
 SERIOUS: list[Template] = [
     Template(_S_SERIOUS,
         _OPEN + "今日は、{you}の話を聞いたよ。…とてもつらいことだったよね。"
@@ -150,18 +178,25 @@ SERIOUS: list[Template] = [
 
 # v1 互換: 問いかけ 1 つの完全な本文(文字列)のリスト
 GENERIC_TEMPLATES: list[str] = [t.full_text() for t in GENERIC]
+CHILD_TEMPLATES: list[str] = [t.full_text() for t in CHILD]
 SERIOUS_TEMPLATES: list[str] = [t.full_text() for t in SERIOUS]
 
 _YOU_BY_FP = {"ぼく": "君", "おれ": "君", "わたし": "あなた", "あたし": "あなた", "うち": "あなた"}
+_CHILD_YOU_BY_FP = {"ぼく": "きみ", "おれ": "きみ", "わたし": "あなた", "あたし": "あなた", "うち": "あなた"}
 
 
-def address_for(first_person: str) -> str:
+def address_for(first_person: str, child: bool = False) -> str:
     """一人称に合わせた呼びかけ(君/あなた)。"""
-    return _YOU_BY_FP.get(first_person, "あなた")
+    table = _CHILD_YOU_BY_FP if child else _YOU_BY_FP
+    return table.get(first_person, "あなた")
 
 
-def _pool(serious: bool) -> list[Template]:
-    return SERIOUS if serious else GENERIC
+def _pool(serious: bool, child: bool) -> list[Template]:
+    if serious:
+        return SERIOUS
+    if child:
+        return CHILD + GENERIC[:2]
+    return GENERIC
 
 
 _TRIGGERS = ("失敗", "緊張", "負け", "間違", "まちが", "忘れ", "落ち", "落と", "遅刻", "泣", "外し", "外れ", "ミス")
@@ -226,7 +261,7 @@ def extract_episode_phrase(transcript: str) -> str | None:
 
 
 def pick_template_parts(future_years: int, first_person: str = "わたし",
-                        serious: bool = False,
+                        serious: bool = False, child: bool = False,
                         reply_pauses: int = 1,
                         rng: random.Random | None = None,
                         episode: str | None = None) -> tuple[str, list[tuple[str, bool]]]:
@@ -237,8 +272,8 @@ def pick_template_parts(future_years: int, first_person: str = "わたし",
     深刻テンプレートでは詳細を引用しない(episode は無視)。
     """
     r = rng or random
-    t = r.choice(_pool(serious))
-    kw = dict(N=future_years, me=first_person or "わたし", you=address_for(first_person))
+    t = r.choice(_pool(serious, child))
+    kw = dict(N=future_years, me=first_person or "わたし", you=address_for(first_person, child))
     head, question, ack, tail = t.head, t.question, t.ack, t.tail
     ep = (episode or "").strip()
     if ep and not serious and _ok_phrase(ep) and "{" not in ep and "}" not in ep:
@@ -252,8 +287,8 @@ def pick_template_parts(future_years: int, first_person: str = "わたし",
 
 
 def pick_template(future_years: int, first_person: str = "わたし",
-                  serious: bool = False,
+                  serious: bool = False, child: bool = False,
                   rng: random.Random | None = None) -> str:
     """条件に合うテンプレートをランダムに選び、年数・一人称を埋めた本文(問いかけ 1 つ)を返す。"""
-    _, parts = pick_template_parts(future_years, first_person, serious, 1, rng)
+    _, parts = pick_template_parts(future_years, first_person, serious, child, 1, rng)
     return "".join(t for t, _ in parts)

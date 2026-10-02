@@ -47,20 +47,6 @@ def builtin_sentences(years: int) -> list[str]:
     ]
 
 
-def group_sentences(sents: list[str], max_chars: int) -> list[str]:
-    """隣り合う文を max_chars 程度までまとめる。1 回の合成ごとの固定コスト(約 5 秒)を減らす。"""
-    out: list[str] = []
-    cur = ""
-    for x in sents:
-        if cur and len(cur) + len(x) > max_chars:
-            out.append(cur)
-            cur = ""
-        cur += x
-    if cur:
-        out.append(cur)
-    return out
-
-
 def story_units(result, sentences: list[str]) -> list[tuple[list[str], str, bool]]:
     """StoryResult を (文リスト, パート本文, 返事待ちか) のリストにする。parts が無ければ 1 パート・待ちなし。"""
     parts = getattr(result, "parts", None)
@@ -88,23 +74,6 @@ def sentence_wait_after(units, n_sentences: int) -> list[int]:
     return sorted(set(out))
 
 
-def _llm_available(lcfg: dict) -> bool:
-    """template は常に可。ollama はローカルサーバーが応答すれば可。gemini は API キーの有無。"""
-    eng = lcfg.get("engine")
-    if eng == "template":
-        return True
-    if eng == "ollama":
-        import urllib.request
-        try:
-            url = str(lcfg.get("ollama_url", "http://127.0.0.1:11434")).rstrip("/") + "/api/tags"
-            urllib.request.urlopen(url, timeout=2).close()
-            return True
-        except Exception:  # noqa: BLE001
-            log.warning("ollama server not reachable; story falls back to templates")
-            return False
-    return bool(get_api_key())
-
-
 class Engines:
     """STT/TTS エンジンの選択・バックグラウンド読み込み・状態管理。"""
 
@@ -115,7 +84,7 @@ class Engines:
         self.stt_lock = threading.Lock()
         self.tts_lock = threading.Lock()
         self._done = {"stt": threading.Event(), "tts": threading.Event()}
-        llm_ok = _llm_available(cfg["llm"])
+        llm_ok = cfg["llm"]["engine"] == "template" or bool(get_api_key())
         self.state = {"stt": "loading", "llm": "ok" if llm_ok else "unavailable", "tts": "loading"}
         self._thread: threading.Thread | None = None
 
@@ -135,8 +104,6 @@ class Engines:
         tcfg = dict(self.cfg["tts"])
         # 相対パスは cwd(backend/)ではなくリポジトリ直下基準で解決する
         tcfg["checkpoint_dir"] = str(resolve_path(tcfg.get("checkpoint_dir") or "models/OpenVoiceV2"))
-        if tcfg.get("engine") == "chatterbox":
-            return importlib.import_module(".tts_chatterbox", PKG).ChatterboxSynthesizer(tcfg)
         cls = importlib.import_module(".tts", PKG).SpeechSynthesizer
         try:
             return cls(tcfg, api_key=get_api_key())
@@ -355,11 +322,11 @@ class Pipeline:
         tts_ok = eng.wait("tts", min(remaining(), 120))
         shift_on = bool(cfg["tts"].get("age_voice_shift", {}).get("enabled"))
 
-        def do_voice():
+        def do_voice(is_child: bool):
             t1 = time.monotonic()
             try:
                 with eng.tts_lock:
-                    ctx = eng.tts.prepare_voice(ref_wav, s.work_dir, f0)
+                    ctx = eng.tts.prepare_voice(ref_wav, s.work_dir, f0, is_child)
                 log.info("step=prepare_voice ms=%d mode=%s", (time.monotonic() - t1) * 1000,
                          getattr(ctx, "mode", "?"))
                 return ctx
@@ -367,7 +334,7 @@ class Pipeline:
                 log.warning("prepare_voice failed: %s", type(e).__name__)
                 return None
 
-        voice_future = self.aux.submit(do_voice) if (tts_ok and not shift_on) else None
+        voice_future = self.aux.submit(do_voice, False) if (tts_ok and not shift_on) else None
 
         t0 = time.monotonic()
         result = None
@@ -392,7 +359,7 @@ class Pipeline:
                  getattr(result, "source", "builtin"), len(sentences))
         ctx = None
         if tts_ok:
-            ctx = voice_future.result() if voice_future else do_voice()
+            ctx = voice_future.result() if voice_future else do_voice(bool(getattr(result, "is_child", False)))
         self._check(s)
         if ctx is None:
             self._finish_browser_tts(s, sentences, s._wait_sentences)
@@ -402,26 +369,19 @@ class Pipeline:
         self._set_step(s, "tts")
         tcfg = cfg["tts"]
         unit = tcfg.get("chunk_unit", "auto")
-        if unit not in ("part", "sentence", "group"):
-            eng_name = tcfg.get("engine")
-            unit = "part" if eng_name == "gemini_openvoice" else "group" if eng_name == "chatterbox" else "sentence"
+        if unit not in ("part", "sentence"):
+            unit = "part" if str(tcfg.get("engine", "")).startswith("gemini_") else "sentence"
         # chunks: (テキスト, パート番号)。part_last[pi] = そのパートの最後のチャンク番号(元の番号)
         chunks: list[tuple[str, int]] = []
         for pi, (sents, text, _w) in enumerate(units):
             if unit == "part":
                 chunks.append((text, pi))
-            elif unit == "group":
-                chunks.extend((x, pi) for x in group_sentences(sents, int(tcfg.get("chunk_chars", 100))))
             else:
                 chunks.extend((x, pi) for x in sents)
         waits = {pi for pi, u in enumerate(units) if u[2]}
         with s.lock:
             s.chunks_total = len(chunks)
-        rac = cfg["pipeline"].get("ring_after_chunks", "all")
-        if str(rac).lower() == "all":  # 全部できてから着信(ローカル合成が遅く、通話中の途切れを防ぐ)
-            ring_after = len(chunks)
-        else:
-            ring_after = 1 if unit == "part" else int(rac)
+        ring_after = 1 if unit == "part" else int(cfg["pipeline"]["ring_after_chunks"])
         fx_cfg = cfg["phone_fx"]
         fx_on = bool(fx_cfg.get("enabled", True)) and phone_fx is not None
         ready = 0

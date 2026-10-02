@@ -1,4 +1,6 @@
-"""Speech synthesis: MeloTTS (JP) + OpenVoice V2 tone-color conversion.
+"""Speech synthesis: Gemini TTS / MeloTTS (JP) + tone-color conversion.
+
+The tone-color converter is OpenVoice V2 or Chatterbox VC (engine name).
 
 All heavy imports are lazy. Text is never logged (S-02); intermediate files
 live under the caller's work_dir.
@@ -50,6 +52,8 @@ def _pitch_shift_file(path: str, semitones: float) -> None:
     sf.write(path, y2, sr, subtype="PCM_16")
 
 
+_GEMINI_ENGINES = ("gemini_openvoice", "gemini_chatterbox")
+_CHATTERBOX_ENGINES = ("gemini_chatterbox", "chatterbox")
 _GEMINI_RATE = 24000
 _QUOTA_COOLDOWN_SEC = 300.0
 _FAIL_COOLDOWN_SEC = 60.0
@@ -143,7 +147,19 @@ class SpeechSynthesizer:
         self._speaker_id: Optional[int] = None
         self._converter: Any = None
         self._src_se: Any = None
+        self._chatterbox: Any = None
         self._device = "cpu"
+
+    # ---------------------------------------------------------------- engine
+    def _engine(self) -> str:
+        return str(self.cfg.get("engine", "openvoice")).lower()
+
+    def _use_chatterbox(self) -> bool:
+        return self._engine() in _CHATTERBOX_ENGINES
+
+    def _vc_ready(self) -> bool:
+        """A tone-color converter (Chatterbox or OpenVoice) is loaded."""
+        return (self._chatterbox if self._use_chatterbox() else self._converter) is not None
 
     # ------------------------------------------------------------------ load
     def _resolve_device(self, torch: Any) -> str:
@@ -172,7 +188,14 @@ class SpeechSynthesizer:
             self._speaker_id = model.hps.data.spk2id["JP"]
             self._melo = model
 
-            if str(self.cfg.get("engine", "openvoice")).lower() != "melo":
+            if self._use_chatterbox():
+                try:
+                    self._load_chatterbox()
+                except Exception as e:  # standard voice still works
+                    log.error("Chatterbox load failed (%s: %s); standard voice only",
+                              type(e).__name__, e)
+                    self._chatterbox = None
+            elif self._engine() != "melo":
                 try:
                     self._load_converter(torch)
                 except Exception as e:  # standard voice still works
@@ -182,6 +205,37 @@ class SpeechSynthesizer:
                     self._converter = None
                     self._src_se = None
             self._warm_up()
+
+    def _load_chatterbox(self) -> None:
+        from chatterbox.vc import ChatterboxVC
+
+        ccfg = self.cfg.get("chatterbox") or {}
+        dev = str(ccfg.get("device") or self._device).lower()
+        if dev == "auto":
+            dev = self._device
+        try:
+            vc = ChatterboxVC.from_pretrained(dev)
+        except Exception as e:
+            if dev == "cpu":
+                raise
+            log.warning("Chatterbox load on %s failed (%s); retrying on cpu", dev, type(e).__name__)
+            vc = ChatterboxVC.from_pretrained("cpu")
+        steps = ccfg.get("cfm_steps")
+        if steps:  # 拡散ステップ数を減らして高速化(既定 10。少ないほど速く、わずかに粗くなる)
+            import functools
+            vc.s3gen.inference = functools.partial(vc.s3gen.inference, n_cfm_timesteps=int(steps))
+        self._chatterbox = vc
+
+    def _chatterbox_convert(self, src_wav: str, ref_wav: str, out_wav: str) -> None:
+        """Chatterbox VC: src_wav の話し方はそのまま、声色だけ ref_wav に変える。
+        呼び出し側が self._lock を保持すること。"""
+        import numpy as np
+        import soundfile as sf
+
+        wav = self._chatterbox.generate(src_wav, target_voice_path=ref_wav)
+        y = wav.detach().cpu().numpy() if hasattr(wav, "detach") else np.asarray(wav)
+        sf.write(out_wav, np.squeeze(y), int(getattr(self._chatterbox, "sr", _GEMINI_RATE)),
+                 subtype="PCM_16")
 
     def _load_converter(self, torch: Any) -> None:
         from openvoice.api import ToneColorConverter
@@ -229,19 +283,21 @@ class SpeechSynthesizer:
 
     # --------------------------------------------------------------- prepare
     def prepare_voice(self, reference_wav: Optional[str], work_dir: str,
-                      median_f0_hz: Optional[float] = None) -> VoiceContext:
+                      median_f0_hz: Optional[float], is_child: bool) -> VoiceContext:
         try:
-            age = self._age_shift()
+            age = self._age_shift(is_child)
             ctx = VoiceContext(mode="standard", age_semitones=age,
                                speaker_id=self._speaker_id)
             if self._gemini_enabled():
                 ctx.voice_name = self._choose_voice(median_f0_hz)
-            engine = str(self.cfg.get("engine", "openvoice")).lower()
-            if engine != "melo" and reference_wav and self._converter is not None \
+            if self._engine() != "melo" and reference_wav and self._vc_ready() \
                     and os.path.exists(reference_wav):
                 try:
-                    with self._lock:
-                        se = self._converter.extract_se([reference_wav])
+                    if self._use_chatterbox():
+                        se = reference_wav  # Chatterbox は参照音声そのものを渡す
+                    else:
+                        with self._lock:
+                            se = self._converter.extract_se([reference_wav])
                     ctx.mode, ctx.target_se = "clone", se
                     return ctx
                 except Exception as e:
@@ -264,17 +320,18 @@ class SpeechSynthesizer:
         except (TypeError, ValueError):
             return 0.5
 
-    def _age_shift(self) -> float:
+    def _age_shift(self, is_child: bool) -> float:
         a = self.cfg.get("age_voice_shift") or {}
         if not a.get("enabled", False):
+            return 0.0
+        if is_child and a.get("skip_if_child", True):
             return 0.0
         return float(a.get("semitones", -1.0))
 
     # ---------------------------------------------------------------- gemini
     def _gemini_enabled(self) -> bool:
-        """gemini_openvoice engine with an API key; otherwise acts like openvoice."""
-        return (str(self.cfg.get("engine", "openvoice")).lower() == "gemini_openvoice"
-                and bool(self.api_key))
+        """gemini_* engine with an API key; otherwise acts like the non-Gemini engine."""
+        return self._engine() in _GEMINI_ENGINES and bool(self.api_key)
 
     def _voice_table(self) -> list:
         """[(name, f0_hz)] from tts.gemini.voices; legacy voice_low/high fallback."""
@@ -364,6 +421,9 @@ class SpeechSynthesizer:
                      model: Optional[str] = None) -> Any:
         content: dict = {"type": "text", "text": text}
         st = style or self._gcfg.get("default_style")
+        suffix = self._gcfg.get("style_suffix")
+        if style and suffix:  # 台本ごとの感情の指示に、自然な日本語の指示を足す
+            st = style.rstrip("。 ") + "。" + str(suffix)
         if st:
             content["annotations"] = [{"type": "speech_metadata", "style": st}]
         return self._get_client().interactions.create(
@@ -447,16 +507,21 @@ class SpeechSynthesizer:
         if used is None:
             log.warning("Gemini TTS unavailable on all models; falling back to MeloTTS")
             return None
-        if used != self._gcfg.get("model", _DEFAULT_MODEL):
-            log.info("Gemini TTS: using fallback model=%s", used)
-        if ctx.mode == "clone" and self._converter is not None:
+        # 使ったモデルと声の名前だけ記録(文章・話し方は出さない)
+        log.info("Gemini TTS: model=%s voice=%s%s", used, ctx.voice_name,
+                 "" if used == self._gcfg.get("model", _DEFAULT_MODEL) else " (fallback)")
+        if ctx.mode == "clone" and self._vc_ready():
             try:
-                src_se = self._se_for_voice(used, ctx.voice_name, gem)
                 conv = os.path.join(tmp, "gconv.wav")
-                with self._lock:
-                    self._converter.convert(
-                        audio_src_path=gem, src_se=src_se, tgt_se=ctx.target_se,
-                        output_path=conv, tau=self._tau(), message="@MyShell")
+                if self._use_chatterbox():
+                    with self._lock:
+                        self._chatterbox_convert(gem, ctx.target_se, conv)
+                else:
+                    src_se = self._se_for_voice(used, ctx.voice_name, gem)
+                    with self._lock:
+                        self._converter.convert(
+                            audio_src_path=gem, src_se=src_se, tgt_se=ctx.target_se,
+                            output_path=conv, tau=self._tau(), message="@MyShell")
                 return conv
             except Exception as e:
                 log.error("Gemini voice conversion failed (%s); using preset voice",
@@ -493,13 +558,16 @@ class SpeechSynthesizer:
             base = os.path.join(tmp, "base.wav")
             self._melo_to_file(text, base)
             done = False
-            if ctx.mode == "clone" and self._converter is not None:
+            if ctx.mode == "clone" and self._vc_ready():
                 try:
                     conv = os.path.join(tmp, "conv.wav")
-                    self._converter.convert(
-                        audio_src_path=base, src_se=self._src_se,
-                        tgt_se=ctx.target_se, output_path=conv,
-                        tau=self._tau(), message="@MyShell")
+                    if self._use_chatterbox():
+                        self._chatterbox_convert(base, ctx.target_se, conv)
+                    else:
+                        self._converter.convert(
+                            audio_src_path=base, src_se=self._src_se,
+                            tgt_se=ctx.target_se, output_path=conv,
+                            tau=self._tau(), message="@MyShell")
                     shutil.move(conv, out_wav)
                     done = True
                 except Exception as e:
