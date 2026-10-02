@@ -370,7 +370,7 @@ class Pipeline:
         tcfg = cfg["tts"]
         unit = tcfg.get("chunk_unit", "auto")
         if unit not in ("part", "sentence"):
-            unit = "part" if tcfg.get("engine") == "gemini_openvoice" else "sentence"
+            unit = "part" if str(tcfg.get("engine", "")).startswith("gemini_") else "sentence"
         # chunks: (テキスト, パート番号)。part_last[pi] = そのパートの最後のチャンク番号(元の番号)
         chunks: list[tuple[str, int]] = []
         for pi, (sents, text, _w) in enumerate(units):

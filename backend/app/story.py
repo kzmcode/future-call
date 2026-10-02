@@ -162,15 +162,15 @@ _SYSTEM_PROMPT = """あなたは、展示会の体験「未来の自分からの
 【空・無関係な内容】
 経験の内容がほとんど読み取れない場合は、特定の細部を作らず、一般的なやさしい励ましのストーリーにする。
 【本文の最後】
-最後のパートは必ず「じゃあ、またね。」で終える。最後のパートの wait_for_reply は false にする。
+最後のパートは、別れの挨拶を述べたうえで必ず「じゃあ、またね。」で終える(問いかけで終えない)。最後のパートの wait_for_reply は false にする。
 """
 
 _STRUCT_HEAD = """【構成(5つの要素を、この順番で、電話の会話らしくつなげる)】
 1. 導入(1〜2文): 「もしもし、びっくりしたよね。{N}年後の(一人称)だよ。」で始める。
 2. 共感(2〜3文): 語られた経験に触れ、そのときのつらさ・くやしさ・はずかしさを認める。
 3. 転機(3〜4文): その経験がきっかけで起きた、思いがけない出来事(ありそうな範囲で)。
-4. 現在(2〜3文): {N}年後の今、その経験がどう生きているか。
-5. 結び(1〜2文): 今の自分へのエール。最後は必ず「じゃあ、またね。」で終える。
+4. 現在(2〜3文): {N}年後の今、その経験が具体的にどう活きているか。仕事・人づきあい・ものの考え方など、ありそうな場面を 1 つ選び、「あのとき○○だったから、今は○○できる」と、経験と今のつながりがはっきり分かるように語る。
+5. 結び(2文): 今の自分へのエールと、別れの挨拶(「話せてよかった」「体に気をつけてね」など)。最後は必ず「じゃあ、またね。」で終える。電話を自分から切る流れで、話の途中や問いかけで終わらない。
 """
 
 _STRUCT_0 = _STRUCT_HEAD + """
@@ -325,8 +325,9 @@ class StoryGenerator:
                                  fp, serious, is_child, "gemini")
         if not res.parts:
             return self._template_result(text, kw_serious, child)
-        logger.info("story: gemini ok len=%d parts=%d serious=%s child=%s in %.1fs",
-                    n, len(res.parts), serious, is_child, time.monotonic() - t0)
+        logger.info("story: gemini ok model=%s len=%d parts=%d serious=%s child=%s in %.1fs",
+                    getattr(self, "_last_model", None), n, len(res.parts), serious, is_child,
+                    time.monotonic() - t0)
         return res
 
     def _normalize_parts(self, parts: list[tuple[str, bool]]) -> list[tuple[str, bool]] | None:
@@ -493,9 +494,12 @@ class StoryGenerator:
                     last = e
                     continue
                 else:
+                    logger.warning("story: model failed model=%s error=%s code=%s",
+                                   model, type(e).__name__, self._err_code(e))
                     raise
                 last = e
                 continue
+            self._last_model = model
             if model != self.model:
                 logger.info("story: using fallback model=%s", model)
             else:

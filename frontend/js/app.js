@@ -1,7 +1,7 @@
 // 画面遷移(状態機械)とメインロジック。
 import { config, applyConfig } from './config.js';
 import { api, log } from './api.js';
-import { unlockAudio } from './audio.js';
+import { unlockAudio, playHangupTone } from './audio.js';
 import { Recorder } from './recorder.js';
 import { Ringtone } from './ringtone.js';
 import { CallPlayer, startWave } from './player.js';
@@ -380,14 +380,15 @@ function goCall() {
       beginReplyWait(run, () => { if (S.run === run && S.player === p) p.resume(); });
       return;
     }
-    if (p.finished()) { endCall(); return; }
+    if (p.finished()) { playHangupTone(config.call_volume); endCall(); return; }
     const sinceAnswer = performance.now() - S.callStart;
     if (!p.hasScheduled && sinceAnswer > 20000) {
       // 音声が取得できない: 最終フォールバック
       log('client_error');
       S.fallback = true; clearTimeout(S.pollTimer);
       startFallback();
-    } else if (p.hasScheduled && p.stalledMs() > 30000) {
+    } else if (p.hasScheduled && p.stalledMs() > (p.allDone ? 30000 : (config.max_wait_sec || 200) * 1000)) {
+      // 生成が続いている間は、次のパートを待って切らない(上限は生成の上限秒数まで)
       endCall();
     }
   }, 300);

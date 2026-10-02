@@ -150,6 +150,14 @@ kill <PID>             # 表示された PID を停止
 
 対処: リポジトリ直下で `load_dotenv(".env")` のように `.env` を明示します(docs の試験コードは対応済み)。あわせて、`.env` の `GEMINI_API_KEY` が空でないか確認してください。
 
+### `Chatterbox load failed` が出て声が変わらない
+
+- `logs/futurecall.log` に `Chatterbox load failed (クラス名: メッセージ)` が出ます。`ModuleNotFoundError` なら `scripts/setup.sh` を再実行するか、`.venv/bin/python -m pip install -r requirements-chatterbox.txt && .venv/bin/python -m pip install --no-deps chatterbox-tts` を実行します。
+- 初回はモデル(`ResembleAI/chatterbox`)を Hugging Face から取得するため、ネット接続が必要です(`scripts/download_models.py` で事前取得できます)。
+- Chatterbox の出力には Resemble AI の不可聴な透かし(Perth)が入ります。音質への影響は実用上ありません。
+- 参照音声のうち使われるのは先頭約 10 秒です。静かな場所で録音すると似やすくなります。
+- すぐ戻したいときは `tts.engine: gemini_openvoice` にします。
+
 ### `OpenVoice load failed` が出て声が変わらない(標準音声のまま)
 
 - `logs/futurecall.log` に `OpenVoice load failed (クラス名: メッセージ)` が出ます。`step=prepare_voice mode=standard` のままなら声クローンは動いていません。

@@ -55,7 +55,7 @@ llm:
   model: gemini-3.5-flash-lite
   fallback_models: [gemini-3.1-flash-lite, gemini-3.8-flash]   # 主モデルが 404(提供終了)または 429(モデルごとの無料枠の上限)のとき順に試す
   quota_cooldown_sec: 120       # 429 になったモデルをこの秒数スキップして再試行(1日あたりの上限なら 30 分)
-  timeout_sec: 20               # Gemini のタイムアウト (F-23)
+  timeout_sec: 35               # Gemini のタイムアウト (F-23)。超えるとテンプレートに切替
   temperature: 0.9
   min_transcript_chars: 10      # これ未満の認識結果はテンプレートに切替 (F-12)
   target_chars_min: 300
@@ -63,12 +63,13 @@ llm:
   reply_pauses: 1               # 問いかけの数 0〜2(0 なら 1 パートのみ)
 
 tts:
-  engine: gemini_openvoice      # gemini_openvoice | openvoice | melo(声クローン無しの標準音声のみ) | mock
+  engine: gemini_chatterbox     # gemini_chatterbox | gemini_openvoice | chatterbox | openvoice | melo(声クローン無しの標準音声のみ) | mock
+                                # gemini_chatterbox = Gemini TTS で読み上げ → Chatterbox VC で声色だけ変換(話し方・抑揚・間は Gemini のまま)
   chunk_unit: auto              # auto | part | sentence(auto = gemini_openvoice なら part、それ以外は sentence)
   gemini:                       # Gemini TTS(gemini_openvoice のとき。読み上げ文と話し方の指示のみ送信し、体験者の声は送らない)
     model: gemini-3.8-flash-tts # 主モデル(表現が豊か)
     fallback_models: [gemini-3.8-flash-lite-tts]   # 主モデルが 429(モデルごとの無料枠の上限)/404 のとき順に試す(少し表現が控えめ)。全モデルが使えないときだけ MeloTTS
-    timeout_sec: 25             # 1 パートの合計の待ち時間。超えたら MeloTTS にフォールバック
+    timeout_sec: 40             # 1 パートの合計の待ち時間。超えたら MeloTTS にフォールバック
     quota_cooldown_sec: 300     # 429 になったモデルをこの秒数スキップして再試行(1日あたりの上限なら 30 分)
     voices:                     # 体験者の声の高さ(F0)に最も近い f0_hz の音声を選ぶ(実測した音声の基本周波数)
       - {name: Charon, f0_hz: 100}
@@ -78,8 +79,12 @@ tts:
     voice_low: Charon
     voice_high: Kore
     voice_split_f0_hz: 165
-    default_style: "懐かしそうに、少し照れながら、やさしく語りかけるように"
-  device: cpu                   # cpu | mps | auto
+    default_style: "電話口で、少し照れくさそうに笑いながら話す、親しい相手への自然な日本語。テンポはゆったり、言いよどみや間をそのまま活かす。外国人のような抑揚や不自然なアクセントは避ける。"   # 台本側に話し方の指示が無いときの既定
+    style_suffix: "親しい相手への自然な日本語。テンポはゆったり、言いよどみや間をそのまま活かす。外国人のような抑揚や不自然なアクセントは避ける。"   # 台本ごとの指示(感情)の後ろに必ず付け足す。日本人らしい自然さの指示
+  device: cpu                   # cpu | mps | auto(MeloTTS / OpenVoice 用)
+  chatterbox:                   # gemini_chatterbox / chatterbox のとき
+    device: mps                 # cpu | mps | auto | null(null なら上の device)。mps は cpu の約2.5倍速い。失敗時は自動で cpu
+    cfm_steps: 6                # 拡散ステップ数(ライブラリ既定 10)。少ないほど速い。通話の待ちが長いときは 4、音質重視なら 8〜10
   checkpoint_dir: models/OpenVoiceV2
   speed: 1.0
   tau: 0.5                      # OpenVoice 変換の tau(0.1〜1.0 で類似度はほぼ同じ。実測 0.5 前後)

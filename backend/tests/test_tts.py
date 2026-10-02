@@ -526,3 +526,93 @@ def test_get_client_disables_429_retry():
     ro = c._api_client._http_options.retry_options
     assert ro is not None and 429 not in ro.http_status_codes
     assert 503 not in ro.http_status_codes
+
+
+# ------------------------------------------------------------ chatterbox
+class FakeChatterbox:
+    sr = 24000
+
+    def __init__(self, fail=False):
+        self.fail = fail
+        self.calls = []
+
+    def generate(self, audio, target_voice_path=None):
+        import numpy as np
+        self.calls.append((os.path.basename(audio), target_voice_path))
+        if self.fail:
+            raise RuntimeError("bad")
+        return np.full((1, 2400), 0.1, dtype="float32")
+
+
+def cbmake(client, cb=None, melo=None, key="k", engine="gemini_chatterbox"):
+    s = SpeechSynthesizer({"engine": engine, "gemini": dict(GCFG)}, api_key=key)
+    s._melo, s._chatterbox, s._speaker_id = melo or FakeMelo(), cb, 0
+    s._gemini_client = client
+    return s
+
+
+def test_chatterbox_prepare_uses_reference_path(tmp_path):
+    ref = tmp_path / "r.wav"
+    ref.write_bytes(b"x")
+    ctx = cbmake(None, FakeChatterbox()).prepare_voice(str(ref), str(tmp_path), 120, False)
+    assert (ctx.mode, ctx.target_se, ctx.voice_name) == ("clone", str(ref), "Charon")
+    # 変換器が読み込めていなければ標準音声
+    assert cbmake(None, None).prepare_voice(str(ref), str(tmp_path), 120, False).mode == "standard"
+
+
+def test_chatterbox_gemini_clone(tmp_path):
+    cb = FakeChatterbox()
+    s = cbmake(FakeGenai(), cb)
+    out = str(tmp_path / "o.wav")
+    s.synthesize(VoiceContext("clone", target_se="/ref.wav", voice_name="Kore"), "x", out)
+    assert cb.calls == [("gemini.wav", "/ref.wav")]
+    import soundfile as sf
+    y, sr = sf.read(out)
+    assert sr == 24000 and len(y) == 2400
+    assert os.listdir(tmp_path) == ["o.wav"]
+
+
+def test_chatterbox_failure_keeps_gemini_voice(tmp_path):
+    s = cbmake(FakeGenai(), FakeChatterbox(fail=True))
+    out = str(tmp_path / "o.wav")
+    s.synthesize(VoiceContext("clone", target_se="/ref.wav", voice_name="Kore"), "x", out)
+    with _wave.open(out) as w:  # 変換前の Gemini 音声
+        assert w.getframerate() == 24000 and w.getnframes() == 2400
+
+
+def test_chatterbox_melo_fallback_also_converted(tmp_path):
+    cb = FakeChatterbox()
+    s = cbmake(FakeGenai(exc=RuntimeError("down")), cb)
+    out = str(tmp_path / "o.wav")
+    s.synthesize(VoiceContext("clone", target_se="/ref.wav", voice_name="Kore"), "x", out)
+    assert cb.calls == [("base.wav", "/ref.wav")]
+
+
+def test_chatterbox_engine_without_gemini_key(tmp_path):
+    s = cbmake(None, FakeChatterbox(), key=None)
+    assert s.prepare_voice(None, str(tmp_path), 120, False).voice_name is None
+    cb = cbmake(None, FakeChatterbox(), engine="chatterbox")
+    assert not cb._gemini_enabled() and cb._use_chatterbox()
+
+
+def test_log_records_model_used(tmp_path, caplog):
+    import logging
+    s = gmake(FakeGenai())
+    with caplog.at_level(logging.INFO, logger="app.tts"):
+        s.synthesize(VoiceContext("standard", voice_name="Kore"), "秘密の本文", str(tmp_path / "o.wav"))
+    msgs = [r.getMessage() for r in caplog.records if "Gemini TTS: model=" in r.getMessage()]
+    assert msgs == ["Gemini TTS: model=m voice=Kore"]
+    assert "秘密" not in caplog.text
+
+
+def test_style_suffix_appended_to_story_style(tmp_path):
+    c = FakeGenai()
+    s = gmake(c)
+    s._gcfg["style_suffix"] = "自然な日本語で"
+    s.synthesize(VoiceContext("standard", voice_name="Kore"), "x", str(tmp_path / "o.wav"), style="やさしく。")
+    assert c.calls[0]["input"][0]["content"][0]["annotations"][0]["style"] == "やさしく。自然な日本語で"
+    c2 = FakeGenai()
+    s2 = gmake(c2)
+    s2._gcfg["style_suffix"] = "自然な日本語で"
+    s2.synthesize(VoiceContext("standard", voice_name="Kore"), "x", str(tmp_path / "p.wav"))
+    assert c2.calls[0]["input"][0]["content"][0]["annotations"][0]["style"] == "default-style"
