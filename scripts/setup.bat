@@ -60,7 +60,7 @@ if errorlevel 1 (
   %PY% -m pip install --no-deps git+https://github.com/myshell-ai/OpenVoice.git
   echo Chatterbox を単独でインストールします (--no-deps)...
   %PY% -m pip install -r requirements-chatterbox.txt
-  %PY% -m pip install --no-deps chatterbox-tts
+  %PY% -m pip install --no-deps chatterbox-tts==0.1.7
   echo unidic をダウンロードします...
   %PY% -m unidic download
 )

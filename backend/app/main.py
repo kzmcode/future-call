@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -22,6 +22,18 @@ from .session import SessionStore
 log = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = 60 * 1024 * 1024
+# 状態を変える API(POST/DELETE)に必須のヘッダー。他サイトからの単純な POST(CSRF)を防ぐ。
+# このヘッダーは自作 JS でしか付けられず、別オリジンから付けるとブラウザが事前確認(CORS)を要求して拒否する。
+CSRF_HEADER = "x-requested-with"
+CSRF_VALUE = "futurecall"
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def _host_only(host_header: str) -> str:
+    h = (host_header or "").strip().lower()
+    if h.startswith("["):  # [::1]:8000
+        return h.split("]")[0] + "]"
+    return h.split(":")[0]
 FRONTEND_DIR = REPO_ROOT / "frontend"
 
 
@@ -51,6 +63,21 @@ def create_app(overrides: dict | None = None) -> FastAPI:
         store.delete_all()
 
     app = FastAPI(title="future-call", lifespan=lifespan)
+    srv_cfg = cfg["server"]
+    allowed_hosts = {str(h).lower() for h in (srv_cfg.get("allowed_hosts") or [])}
+    allowed_hosts.add(str(srv_cfg.get("host", "127.0.0.1")).lower())
+
+    @app.middleware("http")
+    async def guard(request, call_next):
+        # DNS rebinding 対策: 想定外の Host ヘッダーは拒否
+        if _host_only(request.headers.get("host", "")) not in allowed_hosts:
+            return JSONResponse({"detail": "forbidden host"}, status_code=403)
+        # CSRF 対策: 状態を変える API は専用ヘッダー必須
+        if request.url.path.startswith("/api/") and request.method not in SAFE_METHODS \
+                and request.headers.get(CSRF_HEADER) != CSRF_VALUE:
+            return JSONResponse({"detail": "forbidden"}, status_code=403)
+        return await call_next(request)
+
     app.state.cfg, app.state.store = cfg, store
     app.state.engines, app.state.pipeline = engines, pipeline
 

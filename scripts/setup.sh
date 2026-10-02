@@ -53,7 +53,7 @@ if "$PY" -m pip install -r requirements-models.txt; then
   echo "    OpenVoice を単独でインストールします (--no-deps: 依存の衝突を避けるため)..."
   "$PY" -m pip install --no-deps git+https://github.com/myshell-ai/OpenVoice.git || echo "警告: OpenVoice のインストールに失敗。docs/07_troubleshooting.md を参照してください。"
   echo "    Chatterbox (声色変換) を単独でインストールします (--no-deps)..."
-  { "$PY" -m pip install -r requirements-chatterbox.txt && "$PY" -m pip install --no-deps chatterbox-tts; } || echo "警告: Chatterbox のインストールに失敗。docs/07_troubleshooting.md を参照してください。"
+  { "$PY" -m pip install -r requirements-chatterbox.txt && "$PY" -m pip install --no-deps chatterbox-tts==0.1.7; } || echo "警告: Chatterbox のインストールに失敗。docs/07_troubleshooting.md を参照してください。"
   echo "    unidic (日本語辞書) をダウンロードします..."
   "$PY" -m unidic download || echo "警告: unidic のダウンロードに失敗。後で '.venv/bin/python -m unidic download' を実行してください。"
 else

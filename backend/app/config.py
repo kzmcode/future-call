@@ -11,7 +11,8 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 DEFAULTS: dict[str, Any] = {
-    "server": {"host": "127.0.0.1", "port": 8000, "open_browser": False},
+    "server": {"host": "127.0.0.1", "port": 8000, "open_browser": False,
+               "allowed_hosts": ["127.0.0.1", "localhost", "[::1]"]},
     "experience": {
         "future_years": 10, "caller_name": None, "record_min_sec": 20,
         "record_max_sec": 90, "ring_timeout_sec": 30, "missed_call_display_sec": 4,

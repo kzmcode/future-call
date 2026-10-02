@@ -3,7 +3,7 @@ import time
 
 import soundfile as sf
 
-from conftest import make_wav
+from conftest import HEADERS, make_wav
 
 
 def wait_health(c, timeout=10):
@@ -113,7 +113,7 @@ def test_delete_during_processing(tmp_path, wav25):
     from app.main import create_app
     from conftest import base_overrides
     app = create_app(base_overrides(tmp_path))
-    with TestClient(app) as c:
+    with TestClient(app, headers=HEADERS) as c:
         wait_health(c)
         sid = c.post("/api/sessions").json()["session_id"]
         upload(c, sid, wav25)
@@ -131,3 +131,22 @@ def test_startup_removes_leftovers(tmp_path):
     (work / "futurecall_old" / "x.wav").write_bytes(b"x")
     with TestClient(create_app(base_overrides(tmp_path))):
         assert not (work / "futurecall_old").exists()
+
+
+# ---------------------------------------------------------------- security
+def test_post_without_csrf_header_forbidden(client):
+    r = client.post("/api/sessions", headers={"X-Requested-With": ""})
+    assert r.status_code == 403
+    assert client.post("/api/reset", headers={"X-Requested-With": "other"}).status_code == 403
+    assert client.delete("/api/sessions/x", headers={"X-Requested-With": ""}).status_code == 403
+    assert client.post("/api/sessions").status_code == 200  # 既定ヘッダー付きは通る
+
+
+def test_get_needs_no_csrf_header(client):
+    assert client.get("/api/health", headers={"X-Requested-With": ""}).status_code == 200
+
+
+def test_unexpected_host_forbidden(client):
+    assert client.get("/api/health", headers={"Host": "evil.example"}).status_code == 403
+    assert client.get("/api/health", headers={"Host": "evil.example:8000"}).status_code == 403
+    assert client.get("/api/health", headers={"Host": "testserver:8000"}).status_code == 200

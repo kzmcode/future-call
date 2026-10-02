@@ -18,6 +18,9 @@ def make_wav(path, sec=25.0, sr=16000):
     return path
 
 
+HEADERS = {"X-Requested-With": "futurecall"}
+
+
 def base_overrides(tmp_path, **extra):
     o = {
         "stt": {"engine": "mock"},
@@ -25,6 +28,7 @@ def base_overrides(tmp_path, **extra):
         "llm": {"engine": "template"},
         "pipeline": {"work_dir": str(tmp_path / "work"), "total_timeout_sec": 60},
         "logging": {"dir": str(tmp_path / "logs")},
+        "server": {"allowed_hosts": ["testserver"]},
     }
     for k, v in extra.items():
         o.setdefault(k, {}).update(v)
@@ -34,7 +38,7 @@ def base_overrides(tmp_path, **extra):
 @pytest.fixture
 def client(tmp_path):
     app = create_app(base_overrides(tmp_path))
-    with TestClient(app) as c:
+    with TestClient(app, headers=HEADERS) as c:
         c.tmp_path = tmp_path
         yield c
 

@@ -5,7 +5,10 @@ async function req(path, opts = {}, timeoutMs = 15000) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const res = await fetch('/api' + path, { ...opts, signal: ctl.signal, cache: 'no-store' });
+    const res = await fetch('/api' + path, {
+      ...opts, signal: ctl.signal, cache: 'no-store',
+      headers: { ...(opts.headers || {}), 'X-Requested-With': 'futurecall' },
+    });
     if (!res.ok) {
       const e = new Error('HTTP ' + res.status);
       e.status = res.status;
@@ -41,7 +44,7 @@ export function log(event, ms) {
   try {
     fetch('/api/client-log', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'futurecall' },
       body: JSON.stringify({ event, ms: Math.round(ms ?? performance.now() - T0) }),
       keepalive: true,
     }).catch(() => {});

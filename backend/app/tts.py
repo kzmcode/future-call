@@ -245,7 +245,7 @@ class SpeechSynthesizer:
             ToneColorConverter, os.path.join(ck, "converter", "config.json"))
         conv.load_ckpt(os.path.join(ck, "converter", "checkpoint.pth"))
         src_se = torch.load(os.path.join(ck, "base_speakers", "ses", "jp.pth"),
-                            map_location=self._device)
+                            map_location=self._device, weights_only=True)
         self._converter, self._src_se = conv, src_se
 
     def _build_converter(self, cls: Any, config_path: str) -> Any:

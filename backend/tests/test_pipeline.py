@@ -4,14 +4,14 @@ import time
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from conftest import base_overrides, make_wav
+from conftest import HEADERS, base_overrides, make_wav
 from test_api import poll, upload, wait_health
 
 
 @contextlib.contextmanager
 def run(tmp_path, wav, patch=None, **extra):
     app = create_app(base_overrides(tmp_path, **extra))
-    with TestClient(app) as c:
+    with TestClient(app, headers=HEADERS) as c:
         wait_health(c)
         if patch:
             patch(app)
