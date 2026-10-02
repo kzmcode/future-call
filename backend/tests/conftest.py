@@ -18,6 +18,11 @@ def make_wav(path, sec=25.0, sr=16000):
     return path
 
 
+def make_client(app):
+    """CSRF 用ヘッダーと許可された Host 付きの TestClient。"""
+    return TestClient(app, base_url="http://127.0.0.1:8000", headers={"X-Requested-With": "futurecall"})
+
+
 def base_overrides(tmp_path, **extra):
     o = {
         "stt": {"engine": "mock"},
@@ -34,7 +39,7 @@ def base_overrides(tmp_path, **extra):
 @pytest.fixture
 def client(tmp_path):
     app = create_app(base_overrides(tmp_path))
-    with TestClient(app) as c:
+    with make_client(app) as c:
         c.tmp_path = tmp_path
         yield c
 

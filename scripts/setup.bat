@@ -57,7 +57,7 @@ if errorlevel 1 (
   echo 警告: requirements-models.txt のインストールに失敗しました。docs\07_troubleshooting.md を参照してください。
 ) else (
   echo OpenVoice を単独でインストールします (--no-deps)...
-  %PY% -m pip install --no-deps git+https://github.com/myshell-ai/OpenVoice.git
+  %PY% -m pip install --no-deps git+https://github.com/myshell-ai/OpenVoice.git@74a1d147b17a8c3092dd5430504bd83ef6c7eb23
   echo unidic をダウンロードします...
   %PY% -m unidic download
 )

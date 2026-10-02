@@ -109,7 +109,7 @@ Gemini TTS は google-genai 2.25 以上が必要で、古いと **エラーが�
 - Python が 3.10 か確認: `.venv/bin/python --version`
 - OpenVoice は依存が古く衝突するため、`--no-deps` で入れます(`setup.sh` がこの手順を自動で実行します)。
   ```bash
-  .venv/bin/python -m pip install --no-deps git+https://github.com/myshell-ai/OpenVoice.git
+  .venv/bin/python -m pip install --no-deps git+https://github.com/myshell-ai/OpenVoice.git@74a1d147b17a8c3092dd5430504bd83ef6c7eb23
   ```
 - `git` や Xcode Command Line Tools が無い場合: `xcode-select --install`
 - `av` や `pyopenjtalk` 関連のビルドエラー: `brew install ffmpeg cmake` してから再実行。

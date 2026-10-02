@@ -12,12 +12,12 @@
 #  - setuptools<81 は librosa 0.9.1 が pkg_resources を使うために必要です。
 #  - OpenVoice は自前の requirements が古いバージョンを固定して MeloTTS と衝突するため、
 #    このファイルには含めず、別途 --no-deps で入れます(scripts/setup.sh が実行):
-#        pip install --no-deps git+https://github.com/myshell-ai/OpenVoice.git
+#        pip install --no-deps git+https://github.com/myshell-ai/OpenVoice.git@74a1d147b17a8c3092dd5430504bd83ef6c7eb23
 #  - OpenVoice V2 のチェックポイントは scripts/download_models.py で取得します。
 faster-whisper>=1.0
 torch>=2.1,<2.6
 torchaudio>=2.1,<2.6
 noisereduce>=3.0
 setuptools<81
-git+https://github.com/myshell-ai/MeloTTS.git
+git+https://github.com/myshell-ai/MeloTTS.git@209145371cff8fc3bd60d7be902ea69cbdb7965a
 huggingface_hub>=0.20

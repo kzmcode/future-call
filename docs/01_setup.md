@@ -49,7 +49,7 @@ uv venv --python 3.10 .venv        # uv の場合
 .venv/bin/python -m pip install -r requirements-models.txt   # 重い。数分〜十数分
 
 # (2b) OpenVoice は依存が古く MeloTTS と衝突するため、別に --no-deps で入れる
-.venv/bin/python -m pip install --no-deps git+https://github.com/myshell-ai/OpenVoice.git
+.venv/bin/python -m pip install --no-deps git+https://github.com/myshell-ai/OpenVoice.git@74a1d147b17a8c3092dd5430504bd83ef6c7eb23
 
 # (3) MeloTTS(日本語)用の辞書
 .venv/bin/python -m unidic download

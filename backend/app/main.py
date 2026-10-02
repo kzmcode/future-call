@@ -9,8 +9,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, File, Form, HTTPException, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -22,6 +23,41 @@ from .session import SessionStore
 log = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = 60 * 1024 * 1024
+# 状態を変える要求に必須のヘッダー。他サイトからの要求(CSRF)は、このヘッダーを付けると
+# プリフライトが必要になり、CORS を許可していないため拒否される。
+CSRF_HEADER = "x-requested-with"
+CSRF_VALUE = "futurecall"
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+_WILDCARD_HOSTS = {"", "0.0.0.0", "::"}
+ALLOWED_AUDIO_EXTS = {"wav", "webm", "ogg", "oga", "opus", "mp3", "m4a", "mp4", "flac", "aac", "aif", "aiff", "caf"}
+
+
+def sniff_audio(head: bytes) -> bool:
+    """先頭バイトから、音声コンテナ(wav/webm/ogg/flac/mp3/aac/mp4/aiff)かを判定する。
+
+    ffmpeg はプレイリスト(m3u8 等)を内容で判別して、ローカルファイルや URL を辿れるため、
+    音声以外の形式はデコーダーに渡さず、ここで拒否する。
+    """
+    if head[:4] == b"RIFF" and head[8:12] == b"WAVE":
+        return True
+    if head[:4] in (b"\x1a\x45\xdf\xa3", b"OggS", b"fLaC", b"caff"):
+        return True
+    if head[:3] == b"ID3" or head[4:8] == b"ftyp":
+        return True
+    if head[:4] == b"FORM" and head[8:12] in (b"AIFF", b"AIFC"):
+        return True
+    return len(head) >= 2 and head[0] == 0xFF and (head[1] & 0xE0) == 0xE0  # MP3 / ADTS
+
+
+def allowed_hosts(cfg: dict) -> list[str]:
+    """Host ヘッダーの許可リスト(DNS リバインディング対策)。"""
+    srv = cfg.get("server") or {}
+    hosts = ["127.0.0.1", "localhost", "[::1]"]
+    h = str(srv.get("host", "127.0.0.1"))
+    if h not in _WILDCARD_HOSTS and h not in hosts:
+        hosts.append(h)
+    hosts += [str(x) for x in (srv.get("allowed_hosts") or [])]
+    return hosts
 FRONTEND_DIR = REPO_ROOT / "frontend"
 
 
@@ -51,6 +87,14 @@ def create_app(overrides: dict | None = None) -> FastAPI:
         store.delete_all()
 
     app = FastAPI(title="future-call", lifespan=lifespan)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts(cfg))
+
+    @app.middleware("http")
+    async def require_csrf_header(request: Request, call_next):
+        if request.method not in SAFE_METHODS and request.headers.get(CSRF_HEADER) != CSRF_VALUE:
+            return JSONResponse({"detail": "forbidden"}, status_code=403)
+        return await call_next(request)
+
     app.state.cfg, app.state.store = cfg, store
     app.state.engines, app.state.pipeline = engines, pipeline
 
@@ -80,7 +124,7 @@ def create_app(overrides: dict | None = None) -> FastAPI:
                 return {"accepted": True}
             s.started = True
         ext = Path(audio.filename or "").suffix.lower().lstrip(".")
-        if not ext.isalnum() or len(ext) > 5:
+        if ext not in ALLOWED_AUDIO_EXTS:
             ext = "wav"
         dst = s.path(f"upload.{ext}")
         size = 0
@@ -93,6 +137,11 @@ def create_app(overrides: dict | None = None) -> FastAPI:
                     f.write(chunk)
         except FileNotFoundError:
             raise HTTPException(404, "session not found")
+        with open(dst, "rb") as f:
+            head = f.read(16)
+        if not sniff_audio(head):
+            store.delete(sid)
+            raise HTTPException(415, "unsupported media")
         log.info("recording received bytes=%d duration_sec=%.1f", size, duration_sec)
         pipeline.submit(s)
         return {"accepted": True}

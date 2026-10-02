@@ -35,3 +35,13 @@ tts:  { engine: chatterbox, device: auto, chatterbox: { exaggeration: 0.5, cfg_w
 
 `llm.engine: gemini`(要 `.env` の `GEMINI_API_KEY`)、`tts.engine: gemini_openvoice` / `openvoice` / `melo` は従来どおり使えます。
 その場合は旧依存(`requirements-models.txt`)を別の環境に入れてください。Chatterbox とは torch のバージョンが衝突します。
+
+## セキュリティ上の設計(ローカル運用)
+
+- **サーバーは `127.0.0.1` だけで待ち受けます。** 変更するときは、`server.allowed_hosts` にアクセスする Host 名を追加してください(許可していない Host は 400 で拒否されます)。
+- **状態を変える API(`POST` / `DELETE`)は、`X-Requested-With: futurecall` ヘッダーが必須です。** フロントエンド(`frontend/js/api.js`)が付けます。展示機のブラウザで他のサイトを開いても、そのサイトから体験を妨害する要求は送れません。
+- **アップロードされた録音は、先頭のバイトで音声形式(wav / webm / ogg / flac / mp3 / aac / mp4 / aiff)を確認してから処理します。** プレイリストなどの音声でないファイルは 415 で拒否し、セッションごと破棄します。デコードは 5 分分で打ち切ります(`audio_prep.MAX_INPUT_SEC`)。
+- **キオスク用の Chrome は、`127.0.0.1` / `localhost` 以外へ接続できません**(`--host-resolver-rules`)。マイクの許可を自動で承認する設定のため、他サイトへ移動できないようにしています。
+- **起動後はモデルを取りに行きません**(`HF_HUB_OFFLINE=1`)。モデルの取得は `scripts/setup.sh` のときだけです。モデルを更新するときは `HF_HUB_OFFLINE=0 scripts/start.sh` で起動します。
+- **依存のバージョンは固定しています。** `requirements-chatterbox.txt`(直接の依存)と `constraints-chatterbox.txt`(推移的な依存を含む全体。`setup.sh` が Apple Silicon で使用)。旧エンジン用の MeloTTS / OpenVoice もコミットを指定しています。
+  更新するときは、動作を確認してから `uv pip freeze --python .venv/bin/python > constraints-chatterbox.txt` で作り直します。

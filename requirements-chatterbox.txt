@@ -1,11 +1,13 @@
+# 直接の依存は == で固定。推移的な依存も含めた固定は constraints-chatterbox.txt(setup.sh が -c で使う)。
+# 更新するときは、動作を確認してから constraints を作り直す(docs/08_local_mode.md)。
 # ローカル運用(Chatterbox 声クローン + faster-whisper)の重量依存。Python 3.11 推奨。
 # 先に requirements.txt をインストールしてください。
 # chatterbox-tts は torch を固定するため、旧 requirements-models.txt(MeloTTS/OpenVoice 用)とは
 # 同じ環境に入れないでください。
 # Apple Silicon (M シリーズ) は通常の PyPI 版 torch が MPS 対応です。
-faster-whisper>=1.0
-chatterbox-tts>=0.1.4
+faster-whisper==1.2.1
+chatterbox-tts==0.1.7
 # 透かし(resemble-perth)が pkg_resources を使うため。81 以上では pkg_resources が無い
 setuptools<81
-noisereduce>=3.0
-huggingface_hub>=0.20
+noisereduce==3.0.3
+huggingface_hub==1.33.0

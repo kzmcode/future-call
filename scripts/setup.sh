@@ -45,11 +45,16 @@ fi
 # 2. pip 更新と軽量依存
 echo "[2/5] 基本ライブラリをインストールします (requirements.txt)..."
 "$PY" -m pip install --upgrade pip
-"$PY" -m pip install -r requirements.txt
+# 依存のバージョンを固定する(Apple Silicon で動作確認した組み合わせ。他の OS では使わない)
+CONSTRAINTS=()
+if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ] && [ -f constraints-chatterbox.txt ]; then
+  CONSTRAINTS=(-c constraints-chatterbox.txt)
+fi
+"$PY" -m pip install -r requirements.txt "${CONSTRAINTS[@]}"
 
 # 3. 重量依存 (Chatterbox / faster-whisper。すべてローカルで動作)
 echo "[3/5] 音声モデル用ライブラリをインストールします (数分〜十数分かかります)..."
-if ! "$PY" -m pip install -r requirements-chatterbox.txt; then
+if ! "$PY" -m pip install -r requirements-chatterbox.txt "${CONSTRAINTS[@]}"; then
   echo "警告: requirements-chatterbox.txt のインストールに失敗しました。"
   echo "  docs/07_troubleshooting.md を参照してください。モックモードなら動かせます。"
 fi

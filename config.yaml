@@ -4,6 +4,7 @@
 server:
   host: 127.0.0.1
   port: 8000
+  allowed_hosts: []             # 127.0.0.1 / localhost 以外の Host 名でアクセスするときだけ追加(DNS リバインディング対策)
   open_browser: false           # true にすると起動時に既定ブラウザを開く(通常は start スクリプトが Chrome を開く)
 
 experience:

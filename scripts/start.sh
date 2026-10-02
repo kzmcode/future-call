@@ -21,6 +21,10 @@ PY
 )
 URL="http://${HOST}:${PORT}/"
 
+# 起動後はモデルを取りに行かない(取得は setup 時だけ)。最新版が勝手に差し替わるのを防ぐ。
+# 更新したいとき: HF_HUB_OFFLINE=0 scripts/start.sh
+export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}" TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
+
 mkdir -p logs
 ( cd backend && exec python -m app.main ) >> logs/server.out 2>&1 &
 SERVER_PID=$!
@@ -46,6 +50,7 @@ if [ -z "$CHROME" ]; then
 fi
 
 "$CHROME" --kiosk --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream \
+  --host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE 127.0.0.1 , EXCLUDE localhost" \
   --user-data-dir="${ROOT}/.chrome-profile" --no-first-run --no-default-browser-check \
   --disable-session-crashed-bubble --disable-infobars --disable-pinch --overscroll-history-navigation=0 \
   "${URL}"

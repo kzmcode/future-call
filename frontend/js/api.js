@@ -1,11 +1,13 @@
 // バックエンド API ラッパー。失敗時は status 付きの Error を投げる。
 const T0 = performance.now();
+// 状態を変える要求に必須のヘッダー(他サイトからの要求を拒否するため。サーバー側は main.py)
+const GUARD = { 'X-Requested-With': 'futurecall' };
 
 async function req(path, opts = {}, timeoutMs = 15000) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const res = await fetch('/api' + path, { ...opts, signal: ctl.signal, cache: 'no-store' });
+    const res = await fetch('/api' + path, { ...opts, headers: { ...GUARD, ...(opts.headers || {}) }, signal: ctl.signal, cache: 'no-store' });
     if (!res.ok) {
       const e = new Error('HTTP ' + res.status);
       e.status = res.status;
@@ -41,7 +43,7 @@ export function log(event, ms) {
   try {
     fetch('/api/client-log', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...GUARD, 'Content-Type': 'application/json' },
       body: JSON.stringify({ event, ms: Math.round(ms ?? performance.now() - T0) }),
       keepalive: true,
     }).catch(() => {});

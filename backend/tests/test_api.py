@@ -3,7 +3,7 @@ import time
 
 import soundfile as sf
 
-from conftest import make_wav
+from conftest import make_client, make_wav
 
 
 def wait_health(c, timeout=10):
@@ -109,11 +109,10 @@ def test_client_log_whitelist(client):
 
 
 def test_delete_during_processing(tmp_path, wav25):
-    from fastapi.testclient import TestClient
     from app.main import create_app
     from conftest import base_overrides
     app = create_app(base_overrides(tmp_path))
-    with TestClient(app) as c:
+    with make_client(app) as c:
         wait_health(c)
         sid = c.post("/api/sessions").json()["session_id"]
         upload(c, sid, wav25)
@@ -123,11 +122,60 @@ def test_delete_during_processing(tmp_path, wav25):
 
 
 def test_startup_removes_leftovers(tmp_path):
-    from fastapi.testclient import TestClient
     from app.main import create_app
     from conftest import base_overrides
     work = tmp_path / "work"
     (work / "futurecall_old").mkdir(parents=True)
     (work / "futurecall_old" / "x.wav").write_bytes(b"x")
-    with TestClient(create_app(base_overrides(tmp_path))):
+    with make_client(create_app(base_overrides(tmp_path))):
         assert not (work / "futurecall_old").exists()
+
+
+# ---------------------------------------------------------------- security
+
+def test_state_changing_requests_need_guard_header(client):
+    from fastapi.testclient import TestClient
+    bare = TestClient(client.app, base_url="http://127.0.0.1:8000")  # ヘッダーなし(他サイトからの要求に相当)
+    assert bare.post("/api/sessions").status_code == 403
+    assert bare.post("/api/reset").status_code == 403
+    assert bare.delete("/api/sessions/x").status_code == 403
+    assert bare.post("/api/client-log", json={"event": "answer", "ms": 1}).status_code == 403
+    assert bare.get("/api/health").status_code == 200  # 読み取りは影響なし
+    wrong = TestClient(client.app, base_url="http://127.0.0.1:8000", headers={"X-Requested-With": "x"})
+    assert wrong.post("/api/reset").status_code == 403
+
+
+def test_untrusted_host_rejected(client):
+    from fastapi.testclient import TestClient
+    evil = TestClient(client.app, base_url="http://evil.example:8000", headers={"X-Requested-With": "futurecall"})
+    assert evil.get("/api/health").status_code == 400
+    assert evil.post("/api/sessions").status_code == 400
+
+
+def test_allowed_hosts_follow_config():
+    from app.main import allowed_hosts
+    assert "192.168.0.5" in allowed_hosts({"server": {"host": "192.168.0.5"}})
+    assert "0.0.0.0" not in allowed_hosts({"server": {"host": "0.0.0.0"}})
+    assert "kiosk.local" in allowed_hosts({"server": {"allowed_hosts": ["kiosk.local"]}})
+    assert "127.0.0.1" in allowed_hosts({})
+
+
+def test_sniff_audio():
+    from app.main import sniff_audio
+    assert sniff_audio(b"RIFF\x00\x00\x00\x00WAVEfmt ")
+    assert sniff_audio(b"\x1a\x45\xdf\xa3\x01\x00\x00\x00")           # webm
+    assert sniff_audio(b"OggS\x00\x02") and sniff_audio(b"fLaC\x00") and sniff_audio(b"ID3\x04")
+    assert sniff_audio(b"\x00\x00\x00\x18ftypM4A ")
+    assert sniff_audio(b"\xff\xfb\x90\x00")                            # MP3
+    assert not sniff_audio(b"#EXTM3U\n#EXT-X-VERSION:3\n")             # HLS プレイリスト
+    assert not sniff_audio(b"ffconcat version 1.0\nfile /etc/passwd\n")
+    assert not sniff_audio(b"") and not sniff_audio(b"not audio at all")
+
+
+def test_non_audio_upload_rejected_and_not_processed(client):
+    sid = client.post("/api/sessions").json()["session_id"]
+    r = client.post(f"/api/sessions/{sid}/recording",
+                    files={"audio": ("rec.m3u8", b"#EXTM3U\n#EXTINF:1,\n/etc/passwd\n", "audio/x-mpegurl")},
+                    data={"duration_sec": "25"})
+    assert r.status_code == 415
+    assert client.get(f"/api/sessions/{sid}/status").status_code == 404  # セッションは破棄される

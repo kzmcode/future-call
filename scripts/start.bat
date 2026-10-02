@@ -17,6 +17,9 @@ for /f "tokens=1,2" %%a in ('python -c "import yaml;c=(yaml.safe_load(open('conf
 )
 set URL=http://%HOST%:%PORT%/
 
+rem 起動後はモデルを取りに行かない(取得は setup 時だけ)。更新したいときは HF_HUB_OFFLINE=0 を設定して起動
+if not defined HF_HUB_OFFLINE set HF_HUB_OFFLINE=1
+if not defined TRANSFORMERS_OFFLINE set TRANSFORMERS_OFFLINE=1
 if not exist logs mkdir logs
 start "future-call-server" /min cmd /c "cd /d %ROOT%\backend && python -m app.main >> ..\logs\server.out 2>&1"
 
@@ -38,7 +41,7 @@ if "%CHROME%"=="" (
   exit /b 0
 )
 
-"%CHROME%" --kiosk --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --user-data-dir="%ROOT%\.chrome-profile" --no-first-run --no-default-browser-check --disable-session-crashed-bubble --disable-infobars --disable-pinch --overscroll-history-navigation=0 "%URL%"
+"%CHROME%" --kiosk --autoplay-policy=no-user-gesture-required --use-fake-ui-for-media-stream --host-resolver-rules="MAP * ~NOTFOUND , EXCLUDE 127.0.0.1 , EXCLUDE localhost" --user-data-dir="%ROOT%\.chrome-profile" --no-first-run --no-default-browser-check --disable-session-crashed-bubble --disable-infobars --disable-pinch --overscroll-history-navigation=0 "%URL%"
 
 REM Chrome 終了後にサーバーを停止
 taskkill /FI "WINDOWTITLE eq future-call-server*" /T /F >nul 2>&1

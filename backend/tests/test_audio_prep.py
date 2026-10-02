@@ -129,3 +129,13 @@ def test_prepare_never_raises(tmp_path):
         assert isinstance(info, ReferenceInfo)
         assert not info.ok
     assert isinstance(prepare_reference(str(bad), o, {}), ReferenceInfo)
+
+
+def test_input_length_is_capped(tmp_path, monkeypatch):
+    import soundfile as sf
+    from app import audio_prep
+    monkeypatch.setattr(audio_prep, "MAX_INPUT_SEC", 2.0)
+    src, dst = tmp_path / "long.wav", tmp_path / "out.wav"
+    sf.write(str(src), np.zeros(16000 * 10, np.float32) + 0.1, 16000)
+    dur = audio_prep.normalize_input(str(src), str(dst))
+    assert dur <= 2.05

@@ -43,20 +43,29 @@ def _resample(x: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
     return signal.resample_poly(x, sr_out // g, sr_in // g).astype(np.float32)
 
 
+MAX_INPUT_SEC = 300.0  # 入力の最大長(圧縮音声が長時間に展開されてメモリを使い切るのを防ぐ)
+
+
 def _read_with_av(path: str) -> tuple[np.ndarray, int]:
     import av  # lazy, optional
 
     chunks = []
-    with av.open(path) as container:
+    total = 0
+    with av.open(path, options={"protocol_whitelist": "file"}) as container:
         stream = next(s for s in container.streams if s.type == "audio")
         sr = int(stream.rate or 48000)
+        limit = int(MAX_INPUT_SEC * sr)
         resampler = av.AudioResampler(format="flt", layout="mono", rate=sr)
         for frame in container.decode(stream):
             for f in resampler.resample(frame):
-                chunks.append(f.to_ndarray().reshape(-1))
+                a = f.to_ndarray().reshape(-1)
+                chunks.append(a)
+                total += a.size
+            if total >= limit:
+                break
     if not chunks:
         raise ValueError("no audio decoded")
-    return np.concatenate(chunks).astype(np.float32), sr
+    return np.concatenate(chunks).astype(np.float32)[: int(MAX_INPUT_SEC * sr)], sr
 
 
 def _read_with_ffmpeg(path: str) -> tuple[np.ndarray, int]:
@@ -67,7 +76,8 @@ def _read_with_ffmpeg(path: str) -> tuple[np.ndarray, int]:
     os.close(fd)
     try:
         subprocess.run(
-            [exe, "-y", "-loglevel", "error", "-i", path, "-ac", "1", "-f", "wav", tmp],
+            [exe, "-y", "-loglevel", "error", "-protocol_whitelist", "file", "-i", path,
+             "-t", str(int(MAX_INPUT_SEC)), "-ac", "1", "-f", "wav", tmp],
             check=True, timeout=60, capture_output=True,
         )
         data, sr = sf.read(tmp, dtype="float32", always_2d=False)
@@ -81,7 +91,9 @@ def _read_with_ffmpeg(path: str) -> tuple[np.ndarray, int]:
 
 def _read_audio(path: str) -> tuple[np.ndarray, int]:
     try:
-        data, sr = sf.read(path, dtype="float32", always_2d=False)
+        info = sf.info(path)
+        frames = min(int(info.frames), int(MAX_INPUT_SEC * info.samplerate))
+        data, sr = sf.read(path, frames=frames, dtype="float32", always_2d=False)
         return _to_mono(data), int(sr)
     except Exception as e_sf:  # webm/ogg-opus etc.
         log.info("soundfile could not read input (%s); trying fallbacks", type(e_sf).__name__)
