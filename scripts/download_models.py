@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """モデルのダウンロード・確認スクリプト。
 
-- OpenVoice V2 のチェックポイントを models/OpenVoiceV2 に配置
 - faster-whisper のモデル(config.yaml の stt.model_size)を事前取得
-- MeloTTS の日本語モデルを事前取得
+- Chatterbox Multilingual のモデルを事前取得(tts.engine が chatterbox のとき)
+(setup_openvoice は旧エンジン用。既定では呼ばれません)
 
 オプションのパッケージが未インストールでも落ちずに、状況を最後に表示します。
 使い方:  python scripts/download_models.py
@@ -47,9 +47,9 @@ def load_config() -> dict:
         m = re.search(r"^stt:\s*\n(?:[ \t]+.*\n)*?[ \t]+model_size:\s*([\w.\-]+)", text, re.M)
         if m:
             cfg["stt"] = {"model_size": m.group(1)}
-        m = re.search(r"^tts:\s*\n(?:[ \t]+.*\n)*?[ \t]+checkpoint_dir:\s*(\S+)", text, re.M)
+        m = re.search(r"^tts:\s*\n(?:[ \t]+.*\n)*?[ \t]+engine:\s*(\w+)", text, re.M)
         if m:
-            cfg["tts"] = {"checkpoint_dir": m.group(1)}
+            cfg["tts"] = {"engine": m.group(1)}
         return cfg
 
 
@@ -102,7 +102,7 @@ def setup_openvoice(cfg: dict) -> None:
 def setup_whisper(cfg: dict) -> None:
     size = (cfg.get("stt") or {}).get("model_size") or "small"
     engine = (cfg.get("stt") or {}).get("engine") or "faster_whisper"
-    log(f"[2/3] faster-whisper モデル '{size}'")
+    log(f"[1/2] faster-whisper モデル '{size}'")
     if engine == "mock":
         log("    stt.engine が mock のためスキップします。")
         summary.append(("faster-whisper", True, "mock のため不要"))
@@ -121,33 +121,37 @@ def setup_whisper(cfg: dict) -> None:
         summary.append(("faster-whisper", False, f"取得失敗({type(e).__name__})"))
 
 
-def setup_melo() -> None:
-    log("[3/3] MeloTTS 日本語モデル")
+def setup_chatterbox(cfg: dict) -> None:
+    log("[2/2] Chatterbox Multilingual モデル")
+    if (cfg.get("tts") or {}).get("engine") != "chatterbox":
+        summary.append(("Chatterbox", True, "tts.engine が chatterbox ではないため不要"))
+        return
     try:
-        from melo.api import TTS  # type: ignore
+        import torch  # type: ignore
+        from chatterbox.mtl_tts import ChatterboxMultilingualTTS  # type: ignore
     except ImportError:
-        log("    melo が未インストールです。requirements-models.txt を入れてください。")
-        summary.append(("MeloTTS(JP)", False, "未インストール"))
-        return
-    except Exception as e:  # noqa: BLE001
-        log(f"    melo の読み込みに失敗: {type(e).__name__}: {e}")
-        summary.append(("MeloTTS(JP)", False, f"読み込み失敗({type(e).__name__}) 。docs/07_troubleshooting.md 参照"))
+        log("    chatterbox が未インストールです。requirements-chatterbox.txt を入れてください。")
+        summary.append(("Chatterbox", False, "未インストール"))
         return
     try:
-        TTS(language="JP", device="cpu")
-        summary.append(("MeloTTS(JP)", True, "モデル読み込み成功"))
+        orig = torch.load
+        torch.load = lambda *a, **k: orig(*a, **{"map_location": torch.device("cpu"), **k})
+        try:
+            ChatterboxMultilingualTTS.from_pretrained(device="cpu")
+        finally:
+            torch.load = orig
+        summary.append(("Chatterbox", True, "モデル取得・読み込み成功"))
     except Exception as e:  # noqa: BLE001
         log(f"    失敗: {type(e).__name__}: {e}")
-        hint = "unidic 辞書が無い可能性: python -m unidic download" if "unidic" in str(e).lower() or "mecab" in str(e).lower() else "docs/07_troubleshooting.md 参照"
-        summary.append(("MeloTTS(JP)", False, f"失敗({type(e).__name__}) {hint}"))
+        summary.append(("Chatterbox", False, f"失敗({type(e).__name__}) docs/07_troubleshooting.md 参照"))
 
 
 def main() -> int:
     log(f"Python {sys.version.split()[0]} / プロジェクト: {ROOT}")
-    if sys.version_info[:2] != (3, 10):
-        log("注意: Python 3.10 以外です。MeloTTS / OpenVoice は 3.10 を推奨します。")
+    if sys.version_info[:2] != (3, 11):
+        log("注意: Python 3.11 以外です。Chatterbox は 3.11 を推奨します。")
     cfg = load_config()
-    for fn, args in ((setup_openvoice, (cfg,)), (setup_whisper, (cfg,)), (setup_melo, ())):
+    for fn, args in ((setup_whisper, (cfg,)), (setup_chatterbox, (cfg,))):
         try:
             fn(*args)
         except Exception as e:  # noqa: BLE001

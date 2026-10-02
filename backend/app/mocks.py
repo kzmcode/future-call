@@ -37,7 +37,7 @@ class MockSynthesizer:
     def load(self) -> None:
         return None
 
-    def prepare_voice(self, reference_wav, work_dir, median_f0_hz, is_child) -> MockVoiceContext:
+    def prepare_voice(self, reference_wav, work_dir, median_f0_hz=None) -> MockVoiceContext:
         return MockVoiceContext(mode="clone" if reference_wav else "standard")
 
     def synthesize(self, ctx, text: str, out_wav: str, style: str | None = None) -> None:

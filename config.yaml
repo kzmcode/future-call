@@ -34,8 +34,8 @@ audio:                          # 音量設定 (N-21)
   ambient_file: null            # 例: "assets/ambient_cafe.mp3"(frontend/ からの相対パス)。null ならブラウザで自動生成
 
 pipeline:
-  total_timeout_sec: 180        # 生成の上限秒数。超えるとブラウザ音声合成に切替 (N-01)
-  ring_after_chunks: 2          # 何チャンク完成したら着信を開始するか (F-33)
+  total_timeout_sec: 240        # 生成の上限秒数。超えると、できた分だけで着信(1つもできなければブラウザ音声合成) (N-01)
+  ring_after_chunks: all        # all(全部できてから着信。通話中の途切れなし) | 数字(何チャンクできたら着信を開始するか (F-33))
   work_dir: null                # 一時ファイルの置き場。null ならOSの一時ディレクトリ
 
 reference:                      # 参照音声の前処理 (audio_prep)
@@ -51,43 +51,39 @@ stt:
   language: ja
 
 llm:
-  engine: gemini                # gemini | template(template はネット不要で常にテンプレート)
-  model: gemini-3.5-flash-lite
-  fallback_models: [gemini-3.1-flash-lite, gemini-3.8-flash]   # 主モデルが 404(提供終了)または 429(モデルごとの無料枠の上限)のとき順に試す
-  quota_cooldown_sec: 120       # 429 になったモデルをこの秒数スキップして再試行(1日あたりの上限なら 30 分)
-  timeout_sec: 20               # Gemini のタイムアウト (F-23)
+  engine: ollama                # ollama(ローカル。外部通信なし) | gemini(クラウド) | template(常にテンプレート)
+  model: gemma3:12b             # ollama のモデル名。取得: ollama pull gemma3:12b
+  ollama_url: http://127.0.0.1:11434
+  ollama_keep_alive: 30m        # モデルをメモリに置く時間(初回の待ちを避ける)
+  timeout_sec: 90               # ローカル生成の上限秒数 (F-23)。超えたらテンプレートに切替。短い/話に触れない台本は 1 回だけ再生成(経過が半分以内のとき)
   temperature: 0.9
   min_transcript_chars: 10      # これ未満の認識結果はテンプレートに切替 (F-12)
-  target_chars_min: 300
-  target_chars_max: 480         # 相づち・間投詞を含めた上限
+  target_chars_min: 240         # ローカル合成は音声の約 3 倍の時間がかかるため短め
+  target_chars_max: 340         # 相づち・間投詞を含めた上限
   reply_pauses: 1               # 問いかけの数 0〜2(0 なら 1 パートのみ)
+  # gemini を使う場合のみ:
+  fallback_models: [gemini-3.1-flash-lite, gemini-3.8-flash]
+  quota_cooldown_sec: 120
 
 tts:
-  engine: gemini_openvoice      # gemini_openvoice | openvoice | melo(声クローン無しの標準音声のみ) | mock
-  chunk_unit: auto              # auto | part | sentence(auto = gemini_openvoice なら part、それ以外は sentence)
-  gemini:                       # Gemini TTS(gemini_openvoice のとき。読み上げ文と話し方の指示のみ送信し、体験者の声は送らない)
-    model: gemini-3.8-flash-tts # 主モデル(表現が豊か)
-    fallback_models: [gemini-3.8-flash-lite-tts]   # 主モデルが 429(モデルごとの無料枠の上限)/404 のとき順に試す(少し表現が控えめ)。全モデルが使えないときだけ MeloTTS
-    timeout_sec: 25             # 1 パートの合計の待ち時間。超えたら MeloTTS にフォールバック
-    quota_cooldown_sec: 300     # 429 になったモデルをこの秒数スキップして再試行(1日あたりの上限なら 30 分)
-    voices:                     # 体験者の声の高さ(F0)に最も近い f0_hz の音声を選ぶ(実測した音声の基本周波数)
-      - {name: Charon, f0_hz: 100}
-      - {name: Puck, f0_hz: 120}
-      - {name: Kore, f0_hz: 160}
-    # voices を消すと従来の2分割(voice_low/voice_high/voice_split_f0_hz)に戻る
-    voice_low: Charon
-    voice_high: Kore
-    voice_split_f0_hz: 165
-    default_style: "懐かしそうに、少し照れながら、やさしく語りかけるように"
-  device: cpu                   # cpu | mps | auto
-  checkpoint_dir: models/OpenVoiceV2
-  speed: 1.0
-  tau: 0.5                      # OpenVoice 変換の tau(0.1〜1.0 で類似度はほぼ同じ。実測 0.5 前後)
-  standard_voice_pitch_match: true   # F-35: 標準音声を体験者の声の高さに寄せる
+  engine: chatterbox            # chatterbox(ローカル・声クローン) | gemini_openvoice | openvoice | melo | mock
+  chunk_unit: auto              # auto | part | group | sentence(auto = gemini_openvoice なら part、chatterbox なら group、それ以外は sentence)
+  chunk_chars: 100              # group のとき、1 回の合成にまとめる文字数(1 回ごとに約 5 秒の固定コストがあるため、文ごとより速い)
+  device: cpu                   # cpu(M5 実測で安定。約 3 倍の時間で合成) | mps(実測で遅く不安定。文ごとに遅くなる) | auto
+  chatterbox:
+    language_id: ja
+    exaggeration: 0.5           # 感情表現の強さ 0.25〜2.0
+    cfg_weight: 0.5             # 低いほどゆっくり・参照音声の話し方に寄る
+    temperature: 0.8
+    max_retries: 2              # 無音・極端に短い/長い合成のとき再生成する回数
   age_voice_shift:              # Q-06: 未来の声を少し低くする加工
     enabled: false
     semitones: -1.0
-    skip_if_child: true
+  # 以下は openvoice / gemini_openvoice エンジン用(chatterbox では未使用)
+  checkpoint_dir: models/OpenVoiceV2
+  speed: 1.0
+  tau: 0.5
+  standard_voice_pitch_match: true
 
 phone_fx:                       # 電話音質エフェクト (F-34)
   enabled: true

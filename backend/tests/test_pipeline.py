@@ -26,7 +26,6 @@ class FakePart:
 
 
 class FakeResult:
-    is_child = False
     source = "fake"
 
     def __init__(self, parts, style="やさしく"):
@@ -140,7 +139,6 @@ def test_story_without_parts_attr(tmp_path, monkeypatch):
     class R:
         sentences = ["あ。", "い。"]
         text = "あ。い。"
-        is_child = False
         source = "x"
 
     class Gen:
@@ -259,3 +257,35 @@ def test_tts_checkpoint_dir_resolved_against_repo_root(monkeypatch):
     Engines(cfg)._make("tts")
     assert seen["checkpoint_dir"] == str(REPO_ROOT / "models" / "OpenVoiceV2")
     assert cfg["tts"]["checkpoint_dir"] == "models/OpenVoiceV2"  # 元 cfg は変更しない
+
+
+def test_ring_after_all_waits_for_every_chunk(tmp_path, monkeypatch):
+    fake_story(monkeypatch)
+    seen = []
+
+    def patch(app):
+        real = app.state.engines.tts.synthesize
+
+        def slow(ctx, text, out, style=None):
+            time.sleep(0.3)
+            return real(ctx, text, out, style=style) if style else real(ctx, text, out)
+        app.state.engines.tts.synthesize = slow
+
+    wav = make_wav(tmp_path / "r.wav")
+    with run(tmp_path, wav, patch, pipeline={"ring_after_chunks": "all", "chunk_unit": "sentence"}) as (app, c, sid):
+        def cond(s):
+            if s["phase"] == "ready":
+                seen.append((s["chunks_ready"], s["chunks_total"]))
+            return s["all_done"]
+        poll(c, sid, cond)
+    assert seen and all(r == t for r, t in seen)
+
+
+def test_group_sentences():
+    from app.pipeline import group_sentences
+    s = ["あ" * 30, "い" * 30, "う" * 30, "え" * 30, "お" * 30]
+    g = group_sentences(s, 100)
+    assert g == ["あ" * 30 + "い" * 30 + "う" * 30, "え" * 30 + "お" * 30]
+    assert "".join(g) == "".join(s)
+    assert group_sentences(["あ" * 150], 100) == ["あ" * 150]
+    assert group_sentences([], 100) == []

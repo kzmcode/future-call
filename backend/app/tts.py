@@ -229,9 +229,9 @@ class SpeechSynthesizer:
 
     # --------------------------------------------------------------- prepare
     def prepare_voice(self, reference_wav: Optional[str], work_dir: str,
-                      median_f0_hz: Optional[float], is_child: bool) -> VoiceContext:
+                      median_f0_hz: Optional[float] = None) -> VoiceContext:
         try:
-            age = self._age_shift(is_child)
+            age = self._age_shift()
             ctx = VoiceContext(mode="standard", age_semitones=age,
                                speaker_id=self._speaker_id)
             if self._gemini_enabled():
@@ -264,11 +264,9 @@ class SpeechSynthesizer:
         except (TypeError, ValueError):
             return 0.5
 
-    def _age_shift(self, is_child: bool) -> float:
+    def _age_shift(self) -> float:
         a = self.cfg.get("age_voice_shift") or {}
         if not a.get("enabled", False):
-            return 0.0
-        if is_child and a.get("skip_if_child", True):
             return 0.0
         return float(a.get("semitones", -1.0))
 

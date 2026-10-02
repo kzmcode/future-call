@@ -51,17 +51,17 @@ def test_load_without_deps(monkeypatch):
 
 def test_prepare_standard_cases(tmp_path):
     s = SpeechSynthesizer({})
-    assert s.prepare_voice(None, str(tmp_path), 200, False).mode == "standard"
+    assert s.prepare_voice(None, str(tmp_path), 200).mode == "standard"
     ref = tmp_path / "r.wav"
     ref.write_bytes(b"x")
-    assert s.prepare_voice(str(ref), str(tmp_path), None, False).mode == "standard"
+    assert s.prepare_voice(str(ref), str(tmp_path), None).mode == "standard"
 
 
 def test_prepare_clone_and_failure(tmp_path):
     ref = tmp_path / "r.wav"
     ref.write_bytes(b"x")
-    assert make(FakeMelo(), FakeConv()).prepare_voice(str(ref), str(tmp_path), 120, False).mode == "clone"
-    ctx = make(FakeMelo(), FakeConv(fail=True)).prepare_voice(str(ref), str(tmp_path), 110, False)
+    assert make(FakeMelo(), FakeConv()).prepare_voice(str(ref), str(tmp_path), 120).mode == "clone"
+    ctx = make(FakeMelo(), FakeConv(fail=True)).prepare_voice(str(ref), str(tmp_path), 110)
     assert ctx.mode == "standard" and ctx.pitch_semitones == -8.0
 
 
@@ -69,14 +69,13 @@ def test_melo_engine_always_standard(tmp_path):
     ref = tmp_path / "r.wav"
     ref.write_bytes(b"x")
     s = make(FakeMelo(), FakeConv(), engine="melo")
-    assert s.prepare_voice(str(ref), str(tmp_path), None, False).mode == "standard"
+    assert s.prepare_voice(str(ref), str(tmp_path), None).mode == "standard"
 
 
 def test_age_shift():
-    s = SpeechSynthesizer({"age_voice_shift": {"enabled": True, "semitones": -1.5, "skip_if_child": True}})
-    assert s.prepare_voice(None, "", None, False).age_semitones == -1.5
-    assert s.prepare_voice(None, "", None, True).age_semitones == 0.0
-    assert SpeechSynthesizer({}).prepare_voice(None, "", None, False).age_semitones == 0.0
+    s = SpeechSynthesizer({"age_voice_shift": {"enabled": True, "semitones": -1.5}})
+    assert s.prepare_voice(None, "", None).age_semitones == -1.5
+    assert SpeechSynthesizer({}).prepare_voice(None, "", None).age_semitones == 0.0
 
 
 def test_synthesize_clone_ok(tmp_path):
@@ -186,14 +185,14 @@ def gmake(client, melo=None, conv=None, key="k", **extra):
 def test_voice_selection_by_f0(tmp_path):
     s = gmake(None)
     d = str(tmp_path)
-    assert s.prepare_voice(None, d, 120, False).voice_name == "Charon"
-    assert s.prepare_voice(None, d, 220, False).voice_name == "Kore"
-    assert s.prepare_voice(None, d, None, False).voice_name == "Kore"
+    assert s.prepare_voice(None, d, 120).voice_name == "Charon"
+    assert s.prepare_voice(None, d, 220).voice_name == "Kore"
+    assert s.prepare_voice(None, d, None).voice_name == "Kore"
 
 
 def test_no_api_key_behaves_like_openvoice(tmp_path):
     s = gmake(None, key=None)
-    assert s.prepare_voice(None, str(tmp_path), 120, False).voice_name is None
+    assert s.prepare_voice(None, str(tmp_path), 120).voice_name is None
     out = str(tmp_path / "o.wav")
     s.synthesize(VoiceContext("standard"), "x", out)
     assert open(out, "rb").read() == b"base"
@@ -411,7 +410,7 @@ def test_voice_table_nearest_f0(tmp_path):
     s._gcfg["voices"] = [{"name": "Lo", "f0_hz": 100}, {"name": "Mid", "f0_hz": 120},
                          {"name": "Hi", "f0_hz": 160}, {"name": "Top", "f0_hz": 230}]
     d = str(tmp_path)
-    pick = lambda f0: s.prepare_voice(None, d, f0, False).voice_name
+    pick = lambda f0: s.prepare_voice(None, d, f0).voice_name
     assert pick(90) == "Lo" and pick(125) == "Mid" and pick(150) == "Hi"
     assert pick(250) == "Top" and pick(None) == "Top"   # unknown -> 200 Hz -> Top(230)
 

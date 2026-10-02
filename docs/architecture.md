@@ -91,7 +91,6 @@ class StoryResult:
     sentences: list[str]      # 読み上げ用に整形・分割済みのチャンク(1チャンク = 1〜2文、目安 20〜60 文字)
     first_person: str         # "わたし" / "ぼく" / "おれ" 等
     is_serious: bool          # 深刻な内容(S-20)と判定されたか
-    is_child: bool            # 子どもと推定されたか(F-25)
     source: str               # "gemini" | "template" | "template_serious"
 
 class StoryGenerator:
@@ -116,7 +115,7 @@ class SpeechSynthesizer:
     def __init__(self, cfg: dict): ...        # 重い処理はしない
     def load(self) -> None: ...                # MeloTTS(JP) と OpenVoice V2 変換器の読み込み。失敗時は例外
     def prepare_voice(self, reference_wav: str | None, work_dir: str,
-                      median_f0_hz: float | None, is_child: bool) -> VoiceContext: ...
+                      median_f0_hz: float | None = None) -> VoiceContext: ...
         # 参照音声から話者埋め込みを抽出。失敗・参照音声なしなら mode="standard"(F-35)。決して例外を投げない
     def synthesize(self, ctx: VoiceContext, text: str, out_wav: str) -> None: ...
         # 1チャンクを合成して out_wav に書く。clone 失敗時は内部で standard にフォールバック。
@@ -141,7 +140,7 @@ Q-06(未来の声を少し低くする加工)は `tts.age_voice_shift` 設定で
 2. 並列: `prepare_reference` と `transcribe`
 3. `StoryGenerator.generate(transcript)`(同時に `prepare_voice` を実行)
 4. `StoryResult.sentences` を順に `synthesize` → `apply_phone_effect` → `chunk_{i}.wav` を ready にする(F-33)
-5. `ring_after_chunks` 個できた時点で phase=`ready`
+5. `ring_after_chunks` 個(`all` なら全チャンク)できた時点で phase=`ready`
 6. 合成が全滅した場合、または `total_timeout_sec`(180秒)までに 1チャンクもできない場合は `playback="browser_tts"` とし、文リストを返してブラウザの音声合成で再生する(最終フォールバック)
 
 モデル(STT/TTS)はサーバー起動時にバックグラウンドで `load()` する。ロードに失敗したエンジンは「利用不可」として扱い、フォールバック経路を使う。
@@ -227,8 +226,8 @@ audio:                          # N-21
   call_volume: 1.0
 
 pipeline:
-  total_timeout_sec: 180        # N-01 上限
-  ring_after_chunks: 2          # F-33
+  total_timeout_sec: 240        # N-01 上限
+  ring_after_chunks: all        # F-33(all | 数字)
   work_dir: null                # null ならOSの一時ディレクトリ
 
 reference:                      # audio_prep
@@ -262,7 +261,6 @@ tts:
   age_voice_shift:              # Q-06
     enabled: false
     semitones: -1.0
-    skip_if_child: true
 
 phone_fx:
   enabled: true
@@ -323,7 +321,7 @@ class StoryPart:
 
 @dataclass
 class StoryResult:
-    ...                        # v1 のフィールド(text, sentences, first_person, is_serious, is_child, source)
+    ...                        # v1 のフィールド(text, sentences, first_person, is_serious, source)
     parts: list[StoryPart]     # 1〜3 パート。sentences は全パートの sentences を連結したものと一致させる
     style: str                 # Gemini TTS への話し方の指示(日本語 1 文)
 ```

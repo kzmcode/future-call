@@ -63,8 +63,8 @@
 
 | キー | 既定 | 説明 |
 |---|---|---|
-| total_timeout_sec | 180 | 生成の上限。超えるとブラウザ内蔵の音声読み上げで代替 |
-| ring_after_chunks | 2 | 何文できたら着信を始めるか。待ち時間を減らすなら 1、通話中の途切れが出るなら 3 |
+| total_timeout_sec | 240 | 生成の上限。超えると、できた分だけで着信(1 つもできなければブラウザ内蔵の音声読み上げで代替) |
+| ring_after_chunks | all | `all`(既定): 全部の音声ができてから着信を始める。通話中の途切れがない(ローカル合成は遅いため)。数字: 何文できたら着信を始めるか。待ち時間を減らすなら 1、通話中の途切れが出るなら 3 |
 | work_dir | null | 一時ファイルの場所。null で OS の一時フォルダ(通常は変えない) |
 
 ## reference(参照音声の前処理)
@@ -91,7 +91,7 @@
 
 | キー | 既定 | 説明 |
 |---|---|---|
-| engine | gemini | `gemini` または `template`(常にテンプレート) |
+| engine | ollama | `ollama`(既定・ローカル。外部通信なし)/ `gemini`(クラウド)/ `template`(常にテンプレート)。詳細は [08](08_local_mode.md) |
 | model | gemini-3.5-flash-lite | Gemini のモデル名([02](02_gemini_api.md)) |
 | fallback_models | [gemini-3.1-flash-lite, gemini-3.8-flash] | 主モデルが 404 / NOT_FOUND(提供終了・新規ユーザー不可)または 429 / RESOURCE_EXHAUSTED(無料枠の上限。上限はモデルごと)のとき順に試すモデル。404 で動いたモデルはプロセス内で記憶します。503(一時的な過負荷)のときはその通話だけ次のモデルを使います。全モデルが上限ならテンプレートになります。全体で timeout_sec の範囲内 |
 | quota_cooldown_sec | 120 | 429 になったモデルをこの秒数スキップし(次の来場者は即座に次のモデルへ)、過ぎたら再び試します。「1日あたり」の上限のときは自動で 30 分以上にします |
@@ -107,7 +107,7 @@
 
 | キー | 既定 | 説明 |
 |---|---|---|
-| engine | gemini_openvoice | `gemini_openvoice`(既定): Gemini TTS で表現豊かに読み上げ → OpenVoice で体験者の声色に変換。`openvoice`: MeloTTS + OpenVoice(Gemini の読み上げを使わない)。`melo`: 標準音声のみで**速い**(声クローン無し)。`mock`: 開発用 |
+| engine | chatterbox | `chatterbox`(既定・ローカル完結。声クローン。[08](08_local_mode.md))。`gemini_openvoice`: Gemini TTS で表現豊かに読み上げ → OpenVoice で体験者の声色に変換。`openvoice`: MeloTTS + OpenVoice(Gemini の読み上げを使わない)。`melo`: 標準音声のみで**速い**(声クローン無し)。`mock`: 開発用 |
 | chunk_unit | auto | 生成・再生の単位。`auto`(`gemini_openvoice` なら `part`、他は `sentence`)/ `part`(パートごと。Gemini への回数が少ない)/ `sentence`(文ごと) |
 | device | cpu | `cpu` が最も安定。`mps`(Apple GPU)は速い場合があるが不安定なことがある。`auto` は自動選択 |
 | checkpoint_dir | models/OpenVoiceV2 | OpenVoice のモデル置き場(相対パスはリポジトリ直下基準) |
