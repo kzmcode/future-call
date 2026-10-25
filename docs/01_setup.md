@@ -80,6 +80,26 @@ Windows では `.venv/bin/python` を `.venv\Scripts\python.exe` に、`cp` を 
 
 `2.25.x` 以上で、末尾が `True` なら OK です。`False` の場合は上の `pip install -U` をもう一度実行してください。
 
+## Brotli のセキュリティ更新（CVE-2026-111497）
+
+HTTPX / requests は、環境に Brotli があると HTTP 応答を自動展開します。
+`constraints-security.txt` は任意依存の `Brotli>=1.2.1` / `brotlicffi>=1.2.1.0` を要求します。
+制約だけでは既存環境の任意依存は更新されないため、セットアップスクリプトは
+依存導入前とモデル取得前に `scripts/update_brotli.py` を実行します。
+このスクリプトはインストール済みの Brotli パッケージだけを更新し、更新に失敗したら停止します。
+
+既存環境・手動セットアップでは、外部通信を行う前に次を実行してください。
+
+```bash
+.venv/bin/python scripts/update_brotli.py
+```
+
+更新後は実行中のサーバーを再起動してください。Windows は Python のパスを
+`.venv\Scripts\python.exe` に読み替えます。
+追加の依存を手動導入するときも `-c constraints-security.txt` を付けてください。
+
+公式情報: https://github.com/advisories/GHSA-9v8h-qqgm-4m35
+
 ## 4. モデルについて
 
 | モデル | 置き場所 | 取得方法 |

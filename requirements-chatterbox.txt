@@ -1,4 +1,5 @@
 # Chatterbox VC(声色変換)の依存。chatterbox-tts 本体は --no-deps で別に入れます(scripts/setup.sh が実行)。
+-c constraints-security.txt
 # 本体が torch==2.6.0 / librosa==0.11.0 / numpy<1.26 などを固定し、MeloTTS(librosa==0.9.1)と衝突するため。
 # 声色変換(chatterbox.vc)に実際に使うのは torch / torchaudio / librosa / numpy 以外の下記です。
 s3tokenizer==0.3.0

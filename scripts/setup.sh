@@ -45,6 +45,7 @@ fi
 # 2. pip 更新と軽量依存
 echo "[2/5] 基本ライブラリをインストールします (requirements.txt)..."
 "$PY" -m pip install --upgrade pip
+"$PY" scripts/update_brotli.py
 "$PY" -m pip install -r requirements.txt
 
 # 3. 重量依存
@@ -62,6 +63,7 @@ else
 fi
 
 # 4. モデル取得
+"$PY" scripts/update_brotli.py
 echo "[4/5] モデルをダウンロード/確認します..."
 "$PY" scripts/download_models.py || true
 

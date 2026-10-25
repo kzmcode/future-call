@@ -44,6 +44,8 @@ if errorlevel 1 (
 
 echo [2/5] 基本ライブラリをインストールします (requirements.txt)...
 %PY% -m pip install --upgrade pip
+%PY% scripts\update_brotli.py
+if errorlevel 1 exit /b 1
 %PY% -m pip install -r requirements.txt
 if errorlevel 1 (
   echo エラー: インストールに失敗しました。
@@ -66,6 +68,8 @@ if errorlevel 1 (
 )
 
 echo [4/5] モデルをダウンロード/確認します...
+%PY% scripts\update_brotli.py
+if errorlevel 1 exit /b 1
 %PY% scripts\download_models.py
 
 if exist ".env" (

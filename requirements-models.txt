@@ -1,4 +1,5 @@
 # 重量依存(音声認識・声クローン)。Python 3.10 推奨。
+-c constraints-security.txt
 # 先に requirements.txt をインストールしてください。
 #
 # 注意:
