@@ -1,0 +1,4 @@
+# CVE-2026-111497: optional HTTP decoders must use patched Brotli.
+# Constraints do not install packages that are otherwise unnecessary.
+Brotli>=1.2.1
+brotlicffi>=1.2.1.0
