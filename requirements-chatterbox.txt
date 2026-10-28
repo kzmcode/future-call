@@ -3,7 +3,7 @@
 # 本体が torch==2.6.0 / librosa==0.11.0 / numpy<1.26 などを固定し、MeloTTS(librosa==0.9.1)と衝突するため。
 # 声色変換(chatterbox.vc)に実際に使うのは torch / torchaudio / librosa / numpy 以外の下記です。
 s3tokenizer==0.3.0
-transformers==5.2.0
+transformers==5.10.1
 numpy<2
 diffusers==0.29.0
 resemble-perth==1.0.1
